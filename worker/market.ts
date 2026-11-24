@@ -665,8 +665,14 @@ export class Market extends DurableObject<Env> {
     const f = this.fails.get(failKey);
     if (f && now - f.first < FAIL_WINDOW_MS && f.n >= MAX_FAILS) return fail(429, "시도가 너무 많습니다. 잠시 후 다시 시도하세요.");
     const b = await this.body(req);
-    const adminKey = this.env.ADMIN_KEY;
-    if (!adminKey || typeof b.key !== "string" || !safeEqual(b.key, adminKey)) {
+    // 붙여 넣을 때 따라오는 앞뒤 공백·줄바꿈은 무시한다
+    const adminKey = this.env.ADMIN_KEY?.trim();
+    if (!adminKey) {
+      // 서버에 키가 없는 것은 입력 실수가 아니므로 따로 알려 준다 (틀린 시도로 세지 않는다)
+      console.error("ADMIN_KEY 시크릿이 이 환경에 설정되어 있지 않습니다.");
+      return fail(503, "서버에 관리자 키(ADMIN_KEY)가 설정되어 있지 않습니다. 시크릿 등록과 배포를 확인하세요.");
+    }
+    if (typeof b.key !== "string" || !safeEqual(b.key.trim(), adminKey)) {
       const cur = f && now - f.first < FAIL_WINDOW_MS ? f : { n: 0, first: now };
       cur.n++;
       this.fails.set(failKey, cur);
