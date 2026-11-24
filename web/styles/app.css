@@ -1,0 +1,296 @@
+#app { height: 100%; display: flex; flex-direction: column; }
+[hidden] { display: none !important; }
+button { font: inherit; }
+small { font-size: 11px; }
+.empty { padding: 16px; text-align: center; }
+.warn-text { color: var(--warn); }
+.spacer { flex: 1; }
+
+/* 로그인 */
+.login-wrap { min-height: 100%; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.login-panel { width: 320px; padding: 20px; display: flex; flex-direction: column; gap: 10px; border-radius: 6px; }
+.login-logo { font-size: 18px; font-weight: 700; color: var(--accent); margin-bottom: 6px; text-align: center; }
+.link-btn { background: none; border: 0; color: var(--text-2); cursor: pointer; padding: 4px; }
+.link-btn:hover { color: var(--text); }
+
+/* 상단 바 */
+.topbar {
+  display: flex; align-items: center; gap: 16px; height: 44px; padding: 0 12px; flex: none;
+  background: var(--panel); border-bottom: 1px solid var(--line);
+}
+.topbar .logo { font-weight: 700; color: var(--accent); }
+.topbar .nick { font-weight: 600; }
+.topbar .btn { height: 28px; }
+.nav { display: flex; height: 100%; }
+.nav-tab {
+  padding: 0 14px; background: none; border: 0; border-bottom: 2px solid transparent;
+  color: var(--text-2); cursor: pointer; transition: color var(--t-fast);
+}
+.nav-tab:hover { color: var(--text); }
+.nav-tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+.worth { color: var(--text); font-weight: 600; }
+
+/* 종목 정보 바 */
+.infobar { display: flex; align-items: baseline; gap: 20px; padding: 6px 12px; flex: none; flex-wrap: wrap; }
+.ib-name { font-size: 15px; font-weight: 600; }
+.ib-chg { font-size: 14px; }
+.ib-stat { display: flex; gap: 6px; font-size: 12px; }
+.price-big { padding: 0 4px; }
+
+/* 전체 레이아웃 */
+.layout {
+  flex: 1; min-height: 0; display: grid; gap: var(--gap); padding: var(--gap);
+  grid-template-columns: 300px minmax(0, 1fr) 300px;
+}
+.col-left, .col-center, .col-right { min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: var(--gap); }
+.col-left > .panel, .col-right > .orderbook { flex: 1; min-height: 0; }
+.col-center > .chart-panel { flex: 1 1 60%; }
+.col-center > .bottom { flex: 0 0 220px; }
+.col-right > .orderpanel { flex: none; }
+.rt-tabs { display: none; }
+
+/* 종목 목록 */
+.stocklist { display: flex; flex-direction: column; overflow: hidden; }
+.sl-head { padding: 8px; }
+.sl-cols { display: flex; padding: 4px 8px 4px 30px; border-bottom: 1px solid var(--line); color: var(--text-2); font-size: 12px; }
+.sl-col { background: none; border: 0; color: inherit; cursor: pointer; padding: 2px 0; }
+.sl-col.active { color: var(--text); }
+.sl-col:hover { color: var(--text); }
+.sl-body { flex: 1; overflow-y: auto; }
+.sl-row { display: flex; align-items: center; height: 36px; padding: 0 8px; cursor: pointer; border-left: 2px solid transparent; }
+.sl-row:hover { background: var(--panel-2); }
+.sl-row.selected { background: var(--panel-2); border-left-color: var(--accent); }
+.c-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.c-price { width: 66px; text-align: right; }
+.c-chg { width: 58px; text-align: right; }
+.c-vol { width: 42px; text-align: right; }
+.sl-col.c-name { text-align: left; flex: 1; }
+.star { background: none; border: 0; color: var(--text-3); cursor: pointer; width: 22px; padding: 0; }
+.star.on { color: var(--accent); }
+.star:hover { color: var(--accent); }
+
+/* 차트 */
+.chart-panel { display: flex; flex-direction: column; min-height: 0; }
+.chart-toolbar { display: flex; align-items: center; gap: 2px; padding: 0 8px; border-bottom: 1px solid var(--line); }
+.chart-toolbar .btn { height: 26px; padding: 0 10px; margin: 4px 0; }
+.chart-wrap { position: relative; flex: 1; min-height: 0; }
+.chart-host { position: absolute; inset: 0; }
+.chart-legend { position: absolute; top: 6px; left: 10px; z-index: 2; display: flex; gap: 10px; font-size: 12px; pointer-events: none; }
+
+/* 호가창 */
+.orderbook { display: flex; flex-direction: column; overflow: hidden; }
+.ob-body { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; overflow: hidden; }
+.ob-row { position: relative; display: flex; justify-content: space-between; align-items: center; height: 22px; padding: 0 10px; cursor: pointer; font-size: 12px; }
+.ob-row:hover { background: var(--panel-2); }
+.ob-row.ask > span:first-of-type { color: var(--down); }
+.ob-row.bid > span:first-of-type { color: var(--up); }
+.ob-bar { position: absolute; right: 0; top: 1px; bottom: 1px; width: 0; pointer-events: none; }
+.ob-row.ask .ob-bar { background: var(--down-bg); }
+.ob-row.bid .ob-bar { background: var(--up-bg); }
+.ob-row > span { position: relative; }
+.ob-mid { padding: 6px 10px; font-size: 16px; font-weight: 700; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); text-align: center; }
+
+/* 주문 패널 */
+.op-tabs .tab { flex: 1; text-align: center; }
+.op-tabs .tab-buy[aria-selected="true"] { border-bottom-color: var(--up); }
+.op-tabs .tab-sell[aria-selected="true"], .op-tabs .tab-short[aria-selected="true"] { border-bottom-color: var(--down); }
+.op-body { padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.op-row { display: flex; align-items: center; gap: 8px; }
+.op-row > .muted { width: 56px; flex: none; }
+.seg { display: flex; flex: 1; gap: 2px; }
+.seg-btn { flex: 1; height: 28px; background: var(--panel-2); color: var(--text-2); border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; }
+.seg-btn.on { color: var(--text); border-color: var(--accent); }
+.op-quick { display: flex; gap: 4px; }
+.op-quick .btn { flex: 1; height: 26px; padding: 0; font-size: 12px; }
+.op-ref { font-size: 11px; }
+.op-table { display: flex; flex-direction: column; gap: 3px; padding: 6px 0; border-top: 1px solid var(--line); }
+.op-trow { display: flex; justify-content: space-between; font-size: 12px; }
+.op-msg { min-height: 18px; font-size: 12px; }
+
+/* 하단 탭 */
+.bottom { display: flex; flex-direction: column; min-height: 0; }
+.bt-head { display: flex; align-items: center; border-bottom: 1px solid var(--line); padding-right: 10px; }
+.bt-head .tabs { border-bottom: 0; }
+.bt-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.bt-scroll { flex: 1; min-height: 0; overflow: auto; }
+.feed-toggle { font-size: 12px; cursor: pointer; }
+table.grid { width: 100%; border-collapse: collapse; }
+table.grid th { position: sticky; top: 0; background: var(--panel); color: var(--text-2); font-weight: 400; text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+table.grid td { padding: 5px 10px; white-space: nowrap; border-bottom: 1px solid var(--line); }
+table.grid th.num, table.grid td.num { text-align: right; }
+table.grid tr.selected { background: var(--panel-2); }
+table.grid tbody tr[class] { cursor: pointer; }
+.feed-row { padding: 4px 10px; border-bottom: 1px solid var(--line); }
+.feed-row > span + span { margin-left: 0; }
+.feed-row > .num:first-child { margin-right: 10px; }
+
+/* 순위 */
+.rank-wrap { flex: 1; min-height: 0; padding: var(--gap); display: flex; }
+.rank-view { flex: 1; min-width: 0; display: flex; flex-direction: column; max-width: 900px; margin: 0 auto; }
+.rank-head { display: flex; align-items: center; gap: 12px; padding: 0 10px 0 0; border-bottom: 1px solid var(--line); }
+.rank-head .tabs { border-bottom: 0; }
+.rank-metrics { flex: none; width: 260px; }
+.rank-infobar { padding: 6px 12px; font-size: 12px; border-bottom: 1px solid var(--line); min-height: 28px; }
+.rank-scroll { flex: 1; min-height: 0; overflow: auto; }
+.rank-table td { padding: 8px 12px; }
+.rank-table .r-rank { width: 90px; text-align: left; }
+.r-no { display: inline-block; min-width: 28px; font-weight: 600; }
+.r-delta { font-size: 11px; margin-left: 6px; }
+.r-new { color: var(--accent); font-size: 10px; }
+.r1 .r-no { color: var(--accent); font-size: 15px; }
+.r2 .r-no { color: #c4cad4; font-size: 14px; }
+.r3 .r-no { color: #b9855a; font-size: 14px; }
+.rank-table tr.me, .rank-me { background: var(--panel-2); }
+.rank-table tr.me td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
+.r-star { color: var(--accent); font-size: 11px; }
+.rank-me { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-top: 1px solid var(--line); min-height: 40px; }
+.hof-group { padding: 8px 12px 4px; }
+.hof-group .r-rank { width: 90px; text-align: left; }
+.hof-title { font-weight: 600; padding: 6px 0; }
+.hof-sec { padding: 12px 12px 0; color: var(--accent); font-weight: 600; }
+
+/* 뉴스 띠 */
+.news-strip { display: flex; align-items: center; gap: 10px; padding: 0 12px; height: 30px; flex: none; overflow: hidden; font-size: 12px; }
+.news-strip.off { display: none; }
+.news-tag { color: var(--accent); font-weight: 600; flex: none; }
+.news-track { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; }
+.news-inner { display: inline-flex; gap: 40px; }
+.news-inner.scroll { animation: news-scroll var(--dur, 40s) linear infinite; padding-left: 100%; }
+@keyframes news-scroll { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+
+/* 점검·버전·정지 안내 */
+.overlay { position: fixed; inset: 0; z-index: 2000; background: rgba(11, 14, 17, 0.92); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.overlay-box { width: 360px; padding: 24px; display: flex; flex-direction: column; gap: 12px; text-align: center; border-radius: 6px; }
+.overlay-title { font-size: 18px; font-weight: 700; color: var(--accent); }
+.overlay-msg { line-height: 1.6; }
+.login-notice { text-align: center; }
+
+/* 더보기 · 관리자 */
+.more-wrap { overflow: auto; }
+.more-view { flex: 1; min-width: 0; max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--gap); }
+.admin-card .admin-body { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.admin-row > .muted { width: 90px; flex: none; }
+.admin-row .input { flex: 1; }
+.admin-row > label.muted { width: auto; }
+.admin-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+.admin-tile { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; background: var(--panel-2); display: flex; flex-direction: column; gap: 2px; }
+.admin-val { font-size: 18px; font-weight: 600; }
+.admin-bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 4px; overflow: hidden; }
+.admin-bar > div { height: 100%; background: var(--accent); }
+.admin-flags { font-size: 12px; }
+.ev-note { font-size: 11px; }
+.ev-preview { padding: 6px 0; }
+.ev-preview svg { background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); max-width: 100%; }
+
+/* 복권 */
+.lottery-view { flex: 1; min-width: 0; max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; overflow: auto; }
+.lot-body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.lot-seg .seg-btn { height: 32px; }
+.lot-result { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 4px; }
+.lot-ticket { padding: 8px 6px; text-align: center; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel-2); }
+.lot-ticket.lose { color: var(--text-3); }
+.lot-ticket.small { color: var(--text); }
+.lot-ticket.win { color: var(--accent); border-color: var(--accent); font-weight: 600; }
+.lot-summary { min-height: 20px; }
+.lot-prizes { border: 1px solid var(--line); }
+
+/* 모바일 전용 요소는 데스크톱에서 숨김 */
+.mtabbar, .sheet-backdrop, .sheet-head, .sl-market, .mobile-only, .assets-summary { display: none; }
+.menu-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+details.key-card > summary { padding: 8px 12px; cursor: pointer; }
+.sheet-title { font-weight: 600; }
+
+/* 첫 접속 사용법 안내 */
+.guide { position: fixed; inset: 0; z-index: 1500; background: rgba(11, 14, 17, 0.88); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.guide-box { width: 420px; max-width: 100%; padding: 22px; display: flex; flex-direction: column; gap: 10px; border-radius: 6px; }
+.guide-step { font-size: 12px; }
+.guide-title { font-size: 18px; font-weight: 700; color: var(--accent); }
+.guide-body { min-height: 120px; line-height: 1.6; }
+.guide-body p { margin: 0 0 8px; }
+.guide-body, .overlay-msg, .lot-info, .ev-note { word-break: keep-all; } /* 한글이 단어 중간에서 줄바뀌지 않게 */
+.guide-dots { display: flex; gap: 6px; justify-content: center; }
+.guide-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--line); }
+.guide-dot.on { background: var(--accent); }
+.guide-actions { display: flex; align-items: center; gap: 8px; }
+
+/* 1024~1280px: 호가창을 주문 패널과 탭으로 합침 */
+@media (max-width: 1279px) {
+  .layout { grid-template-columns: 260px minmax(0, 1fr) 280px; }
+  .rt-tabs { display: flex; }
+  .c-vol { display: none; }
+  .col-right[data-rt="book"] .orderpanel { display: none; }
+  .col-right[data-rt="order"] .orderbook { display: none; }
+  .col-right[data-rt="order"] .orderpanel { flex: 1; }
+}
+
+/* ── 모바일 (900px 이하): 하단 탭 바 · 주문 바텀 시트 ── */
+@media (max-width: 900px) {
+  :root { --tabbar-h: 56px; --safe-b: env(safe-area-inset-bottom, 0px); }
+  #app.app-main { padding-bottom: calc(var(--tabbar-h) + var(--safe-b)); }
+  .mobile-only { display: inline-flex; }
+  .sl-market { display: flex; }
+  .layout[data-mtab="assets"] .assets-summary { display: block; padding: 8px 12px; font-size: 13px; }
+  .input { font-size: 16px; } /* iOS가 입력 때 화면을 확대하지 않도록 */
+
+  .topbar { height: 40px; padding: 0 10px; gap: 10px; font-size: 12px; }
+  .topbar .nav, .topbar .nick, .topbar .tb-logout { display: none; }
+  .topbar .btn { height: 26px; padding: 0 8px; font-size: 12px; }
+  .topbar .logo { font-size: 14px; }
+
+  .infobar { gap: 10px; padding: 6px 10px; flex-wrap: nowrap; align-items: baseline; }
+  .infobar .ib-stat { display: none; }
+  .ib-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 38vw; }
+  .price-big { font-size: 22px; }
+  .ib-chg { font-size: 12px; white-space: nowrap; }
+  .news-strip { height: 26px; }
+
+  .layout { display: flex; flex-direction: column; gap: 0; padding: 0; }
+  .col-left, .col-center, .col-right { display: none; }
+  .layout[data-mtab="market"] .col-left { display: flex; flex: 1; min-height: 0; }
+  .layout[data-mtab="chart"] .col-center,
+  .layout[data-mtab="order"] .col-center,
+  .layout[data-mtab="assets"] .col-center { display: flex; flex: 1; min-height: 0; }
+  .layout:not([data-mtab="assets"]) .col-center .bottom { display: none; }
+  .layout[data-mtab="assets"] .col-center .chart-panel { display: none; }
+  .layout[data-mtab="assets"] .col-center .bottom { flex: 1 1 auto; }
+  .col-center > .chart-panel { flex: 1 1 auto; }
+
+  /* 주문 바텀 시트 */
+  .layout[data-mtab="order"] .col-right {
+    display: flex; position: fixed; left: 0; right: 0; bottom: calc(var(--tabbar-h) + var(--safe-b));
+    max-height: 80vh; overflow-y: auto; z-index: 60; gap: 0;
+    background: var(--panel); border-top: 1px solid var(--line);
+  }
+  .col-right > .orderbook, .col-right > .orderpanel { flex: none; border: 0; }
+  .ob-body { justify-content: flex-start; }
+  .sheet-head { display: flex; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--line); }
+  .sheet-head .btn { height: 28px; }
+  .sheet-backdrop { display: block; position: fixed; left: 0; right: 0; top: 0; bottom: calc(var(--tabbar-h) + var(--safe-b)); background: rgba(11, 14, 17, 0.6); z-index: 55; }
+
+  /* 하단 탭 바 */
+  .mtabbar {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 70;
+    height: calc(var(--tabbar-h) + var(--safe-b)); padding-bottom: var(--safe-b);
+    background: var(--panel); border-top: 1px solid var(--line);
+  }
+  .mtab { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; background: none; border: 0; color: var(--text-2); font-size: 11px; cursor: pointer; }
+  .mtab[aria-selected="true"] { color: var(--accent); }
+
+  /* 순위 · 복권 · 더보기 */
+  .rank-wrap { padding: 0; }
+  .rank-wrap > .panel, .more-view { max-width: none; }
+  .rank-head { flex-wrap: wrap; padding: 0 0 6px; }
+  .rank-head .tabs { overflow-x: auto; max-width: 100%; }
+  .rank-head .tab { padding: 8px 10px; white-space: nowrap; }
+  .rank-metrics { flex: 1 1 100%; width: auto; margin: 0 8px; }
+  .rank-table td, .rank-table th { padding: 8px 8px; }
+  .rank-table .r-rank { width: 76px; }
+  .lot-result { grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); }
+  .admin-card .grid { display: block; overflow-x: auto; }
+  .admin-row { flex-wrap: wrap; }
+  .admin-row > .muted { width: 100%; }
+
+  /* 토스트는 상단 바 아래로 */
+  #toasts { top: 48px; right: 8px; left: 8px; align-items: stretch; }
+  .toast { max-width: none; min-width: 0; }
+}

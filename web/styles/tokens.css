@@ -1,0 +1,127 @@
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css");
+
+:root {
+  --bg: #0b0e11;
+  --panel: #14171c;
+  --panel-2: #1b1f26;
+  --line: #252a33;
+  --text: #e6e8eb;
+  --text-2: #8a919e;
+  --text-3: #5c6370;
+  --up: #f23645;
+  --down: #2f80ed;
+  --up-bg: rgba(242, 54, 69, 0.12);
+  --down-bg: rgba(47, 128, 237, 0.12);
+  --accent: #e8a33d;
+  --warn: #f5a524;
+
+  --radius: 4px;
+  --radius-panel: 0px;
+  --gap: 2px;
+  --font: "Pretendard", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --fs: 13px;
+  --t-fast: 0.15s;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: var(--fs)/1.5 var(--font);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 스크롤바 */
+* { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* 숫자 */
+.num { font-variant-numeric: tabular-nums; text-align: right; }
+.price-big { font-size: 26px; font-weight: 700; }
+.up { color: var(--up); }
+.down { color: var(--down); }
+.muted { color: var(--text-2); }
+
+/* 패널 */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+}
+.panel-title {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-2);
+  font-weight: 600;
+}
+
+/* 버튼 */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 32px; padding: 0 14px;
+  background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  font: inherit; cursor: pointer;
+  transition: background var(--t-fast), border-color var(--t-fast);
+}
+.btn:hover { border-color: var(--text-3); }
+.btn:disabled { color: var(--text-3); cursor: not-allowed; }
+.btn-primary { background: transparent; border-color: var(--accent); color: var(--accent); }
+.btn-buy { background: var(--up); border-color: var(--up); color: #fff; font-weight: 600; }
+.btn-sell { background: var(--down); border-color: var(--down); color: #fff; font-weight: 600; }
+.btn-lg { height: 40px; width: 100%; }
+
+/* 입력창 */
+.input {
+  height: 32px; width: 100%; padding: 0 10px;
+  background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  font: inherit; outline: none;
+  transition: border-color var(--t-fast);
+}
+.input:focus { border-color: var(--accent); }
+.input::placeholder { color: var(--text-3); }
+.input.num { text-align: right; }
+
+/* 탭 */
+.tabs { display: flex; border-bottom: 1px solid var(--line); }
+.tab {
+  padding: 8px 14px; background: none; border: 0; border-bottom: 2px solid transparent;
+  color: var(--text-2); font: inherit; cursor: pointer;
+}
+.tab:hover { color: var(--text); }
+.tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+
+/* 가격 깜빡임 */
+@keyframes flash-up { from { background: var(--up-bg); } to { background: transparent; } }
+@keyframes flash-down { from { background: var(--down-bg); } to { background: transparent; } }
+.flash-up { animation: flash-up 0.4s ease-out; }
+.flash-down { animation: flash-down 0.4s ease-out; }
+
+/* 토스트 */
+#toasts {
+  position: fixed; top: 12px; right: 12px; z-index: 1000;
+  display: flex; flex-direction: column; gap: 6px; pointer-events: none;
+}
+.toast {
+  min-width: 220px; max-width: 320px; padding: 10px 12px;
+  background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--text-3);
+  border-radius: var(--radius); pointer-events: auto;
+  animation: toast-in var(--t-fast) ease-out;
+}
+.toast.up { border-left-color: var(--up); color: var(--text); }
+.toast.down { border-left-color: var(--down); color: var(--text); }
+.toast.warn { border-left-color: var(--warn); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+/* 연결 끊김 배너 */
+.banner-warn {
+  padding: 4px 12px; background: var(--warn); color: #000; text-align: center; font-size: 12px;
+}
