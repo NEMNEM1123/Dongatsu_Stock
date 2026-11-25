@@ -137,9 +137,9 @@ describe("블록 채우기: 배당과 시간", () => {
   });
 
   it("배당 계산 예", () => {
-    expect(payoutFor(1_000_000, 1)).toBe(500_000);
-    expect(payoutFor(1_000_000, 3)).toBe(1_500_000);
-    expect(payoutFor(10_001, 1)).toBe(5000); // 소수점은 버림
+    expect(payoutFor(1_000_000, 1)).toBe(400_000);
+    expect(payoutFor(1_000_000, 3)).toBe(1_300_000);
+    expect(payoutFor(10_001, 1)).toBe(4000); // 소수점은 버림
   });
 
   it("배팅 상한으로 최종 단계까지 가도 정수이고 단조 증가", () => {

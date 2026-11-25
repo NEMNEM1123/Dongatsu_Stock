@@ -3,4 +3,4 @@
 export const CLIENT_VERSION = 1;
 
 // 화면에 보여 주는 앱 버전 (사용자용 표기). 위의 CLIENT_VERSION은 호환성 비교용 번호라서 따로 둔다.
-export const APP_VERSION = "1.1.0";
+export const APP_VERSION = "1.1.1";

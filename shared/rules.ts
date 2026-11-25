@@ -57,18 +57,17 @@ export const RULES = {
   // 1·2단계만 깨고 정산하면 손해이고, 3단계를 깨야 비로소 이득이다. 길이는 PUZZLE_STAGES와 같아야 한다.
   PUZZLE_MIN_BET: 10_000,
   PUZZLE_MAX_BET: 1_000_000,
-  PUZZLE_PAYOUT_MULT: [0.5, 0.8, 1.5, 2.5, 4, 6.5, 10, 16],
+  PUZZLE_PAYOUT_MULT: [0.4, 0.7, 1.3, 2, 3, 4.5, 7],
   PUZZLE_GRACE_MS: 1500, // 네트워크 지연을 감안해 제한 시간에 더해 주는 여유 (화면 타이머는 이 여유를 포함하지 않는다)
   PUZZLE_FEED_MIN: 10_000_000, // 이 금액 이상 받으면 체결 피드에 알림
   // size: 한 변 칸 수 / minPiece·maxPiece: 조각 하나의 칸 수 범위 / seconds: 제한 시간
   PUZZLE_STAGES: [
-    { size: 3, minPiece: 2, maxPiece: 4, seconds: 20 },
-    { size: 4, minPiece: 3, maxPiece: 5, seconds: 30 },
-    { size: 5, minPiece: 3, maxPiece: 5, seconds: 45 },
-    { size: 6, minPiece: 3, maxPiece: 5, seconds: 60 },
-    { size: 7, minPiece: 3, maxPiece: 6, seconds: 80 },
-    { size: 8, minPiece: 3, maxPiece: 6, seconds: 100 },
-    { size: 9, minPiece: 4, maxPiece: 6, seconds: 125 },
+    { size: 4, minPiece: 3, maxPiece: 5, seconds: 25 },
+    { size: 5, minPiece: 3, maxPiece: 5, seconds: 40 },
+    { size: 6, minPiece: 3, maxPiece: 5, seconds: 55 },
+    { size: 7, minPiece: 3, maxPiece: 6, seconds: 75 },
+    { size: 8, minPiece: 3, maxPiece: 6, seconds: 95 },
+    { size: 9, minPiece: 4, maxPiece: 6, seconds: 120 },
     { size: 10, minPiece: 4, maxPiece: 7, seconds: 150 },
   ],
 

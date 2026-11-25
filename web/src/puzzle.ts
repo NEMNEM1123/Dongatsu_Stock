@@ -60,11 +60,16 @@ export function createPuzzleView(): {
       return;
     }
     busy = true;
+    // 5초가 지나도 오류로 보지 않는다: 느린 네트워크에서는 서버가 처리한 뒤 응답이 늦게 도착할 수 있고, 그 응답도 그대로 반영한다.
     busyTimer = window.setTimeout(() => {
-      release();
-      msg = "응답이 없습니다. 잠시 후 다시 시도하세요.";
-      store.conn?.send({ t: "puzzle", act: "state" });
+      msg = "서버 응답이 늦어지고 있어요. 잠시만 기다려 주세요…";
       render();
+      busyTimer = window.setTimeout(() => {
+        release();
+        msg = "응답이 없습니다. 현재 판 상태를 다시 확인합니다.";
+        store.conn?.send({ t: "puzzle", act: "state" }); // 서버에 이미 반영됐다면 이 응답으로 판이 이어진다
+        render();
+      }, REPLY_TIMEOUT_MS * 5);
     }, REPLY_TIMEOUT_MS);
     render();
   }
