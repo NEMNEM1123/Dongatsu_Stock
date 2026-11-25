@@ -153,6 +153,8 @@ table.grid tbody tr[class] { cursor: pointer; }
 .news-strip { display: flex; align-items: center; gap: 10px; padding: 0 12px; height: 30px; flex: none; overflow: hidden; font-size: 12px; }
 .news-strip.off { display: none; }
 .news-tag { color: var(--accent); font-weight: 600; flex: none; }
+.news-side { flex: none; }
+.news-buy { flex: none; height: 22px; padding: 0 10px; font-size: 12px; }
 .news-track { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; }
 .news-inner { display: inline-flex; gap: 40px; }
 .news-inner.scroll { animation: news-scroll var(--dur, 40s) linear infinite; padding-left: 100%; }

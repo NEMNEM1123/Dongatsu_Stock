@@ -337,7 +337,19 @@ export class Market extends DurableObject<Env> {
       .exec("SELECT id, stock_id, start_tick, headline FROM events WHERE start_tick > ? AND start_tick <= ? ORDER BY start_tick", this.lastNewsTick, px.tick)
       .toArray();
     this.lastNewsTick = px.tick;
-    for (const r of rows) this.broadcast({ t: "news", item: this.newsItem(r) });
+    if (rows.length > 0) {
+      // 뉴스는 열람권이 있는 접속자에게만 보낸다
+      const now = Date.now();
+      const msgs = rows.map((r) => JSON.stringify({ t: "news", item: this.newsItem(r) } satisfies ServerMsg));
+      const allowed = new Map<number, boolean>();
+      for (const w of this.openSockets()) {
+        const a = w.deserializeAttachment() as Attachment | null;
+        if (!a) continue;
+        let ok = allowed.get(a.userId);
+        if (ok === undefined) { ok = this.newsUntil(a.userId) > now; allowed.set(a.userId, ok); }
+        if (ok) for (const m of msgs) w.send(m);
+      }
+    }
     this.maybeSpawnEvent(px.tick);
 
     // 접속 중에는 매 tick 예약 주문을 검사한다 (접속하지 않은 동안은 체크포인트에서 지난 구간을 훑는다)
@@ -389,6 +401,39 @@ export class Market extends DurableObject<Env> {
       .exec("SELECT id, stock_id, start_tick, headline FROM events WHERE start_tick <= ? ORDER BY start_tick DESC LIMIT 10", this.currentTick())
       .toArray()
       .map((r) => this.newsItem(r));
+  }
+
+  /** 뉴스 열람권 만료 시각(ms). 없으면 0 */
+  private newsUntil(userId: number): number {
+    const r = this.sql.exec("SELECT until FROM news_pass WHERE user_id = ?", userId).toArray()[0];
+    return r ? Number(r.until) : 0;
+  }
+
+  /** 뉴스 열람권 구매: 구매 시점 순자산의 NEWS_PASS_RATE를 현금에서 내고 NEWS_PASS_MIN분 동안 뉴스를 받는다. */
+  private handleNewsPass(ws: WebSocket, att: Attachment): void {
+    let out: ServerMsg = { t: "newsPass", ok: false, error: "처리하지 못했습니다." };
+    let events: LiquidationEvent[] = [];
+    if (this.rateLimited(att.userId)) {
+      ws.send(JSON.stringify({ t: "newsPass", ok: false, error: "너무 빠릅니다. 잠시 후 다시 시도하세요." } satisfies ServerMsg));
+      return;
+    }
+    this.ctx.storage.transactionSync(() => {
+      events = this.liquidateUser(att.userId);
+      const now = Date.now();
+      if (this.newsUntil(att.userId) > now) { out = { t: "newsPass", ok: false, error: "이미 뉴스를 보는 중입니다." }; return; }
+      const cash = this.getCash(att.userId);
+      const nw = netWorth(cash, this.getPositions(att.userId), (s) => this.priceNow(s));
+      const cost = Math.floor(nw * RULES.NEWS_PASS_RATE);
+      if (cost <= 0) { out = { t: "newsPass", ok: false, error: "순자산이 없어 구매할 수 없습니다." }; return; }
+      if (cost > cash) { out = { t: "newsPass", ok: false, error: `현금이 부족합니다. (필요 ${cost.toLocaleString("ko-KR")}원)` }; return; }
+      const until = now + RULES.NEWS_PASS_MIN * 60_000;
+      this.setCash(att.userId, cash - cost);
+      this.sql.exec("INSERT OR REPLACE INTO news_pass (user_id, until) VALUES (?, ?)", att.userId, until);
+      out = { t: "newsPass", ok: true, until, cost, news: this.recentNews() };
+    });
+    this.notifyLiquidations(events);
+    ws.send(JSON.stringify(out));
+    ws.send(JSON.stringify(this.accountMsg(att.userId)));
   }
 
   private maintenanceInfo(): MaintenanceInfo {
@@ -654,6 +699,16 @@ export class Market extends DurableObject<Env> {
         CREATE INDEX pt_log_user ON pt_log (user_id, id);
       `);
       v = 10;
+    }
+
+    if (v < 11) {
+      this.sql.exec(`
+        CREATE TABLE news_pass (
+          user_id INTEGER PRIMARY KEY,
+          until INTEGER NOT NULL
+        );
+      `);
+      v = 11;
     }
 
     this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)", String(v));
@@ -2240,6 +2295,7 @@ export class Market extends DurableObject<Env> {
     const att: Attachment = { userId: u.id, nickname: u.nickname, role: u.role, v: Number(new URL(req.url).searchParams.get("v")) || 0 };
     server.serializeAttachment(att);
 
+    const newsUntil = this.newsUntil(u.id);
     const hello: ServerMsg = {
       t: "hello",
       viewSeed: this.viewSeed(),
@@ -2250,7 +2306,8 @@ export class Market extends DurableObject<Env> {
       user: { id: u.id, nickname: u.nickname, role: u.role },
       px: { ...this.currentPx(), ids: STOCKS.map((s) => s.id) },
       days: this.dayInits(),
-      news: this.recentNews(),
+      news: newsUntil > Date.now() ? this.recentNews() : [],
+      newsUntil,
       maintenance: this.maintenanceInfo(),
       minVersion: this.minVersion(),
     };
@@ -2298,7 +2355,7 @@ export class Market extends DurableObject<Env> {
       const att = ws.deserializeAttachment() as Attachment | null;
       if (!att) return;
       const blocked =
-        msg.t === "order" || msg.t === "bailout" || msg.t === "lottery" || msg.t === "prestige" || msg.t === "reserve" || msg.t === "claim" || msg.t === "puzzle" || msg.t === "pt"
+        msg.t === "order" || msg.t === "bailout" || msg.t === "lottery" || msg.t === "prestige" || msg.t === "reserve" || msg.t === "claim" || msg.t === "puzzle" || msg.t === "pt" || msg.t === "newsPass"
           ? this.gate(att)
           : null;
       if (blocked) {
@@ -2324,6 +2381,7 @@ export class Market extends DurableObject<Env> {
         else if (msg.t === "puzzle") this.handlePuzzle(ws, att, msg);
         else if (msg.t === "pt") this.handlePt(ws, att, msg);
         else if (msg.t === "prestige") this.handlePrestige(ws, att);
+        else if (msg.t === "newsPass") this.handleNewsPass(ws, att);
         else if (msg.t === "stats") this.handleStats(ws, att);
         else if (msg.t === "quests") this.handleQuests(ws, att);
         else if (msg.t === "claim") this.handleClaim(ws, att, msg);
@@ -2336,7 +2394,7 @@ export class Market extends DurableObject<Env> {
         try {
           if (msg.t === "order") ws.send(JSON.stringify({ t: "order", id: Number(msg.id) || 0, ok: false, error } satisfies ServerMsg));
           else if (msg.t === "lottery") ws.send(JSON.stringify({ t: "lottery", ok: false, error } satisfies ServerMsg));
-          else if (msg.t === "bailout" || msg.t === "prestige" || msg.t === "reserve" || msg.t === "claim" || msg.t === "puzzle" || msg.t === "pt") ws.send(JSON.stringify({ t: msg.t, ok: false, error } satisfies ServerMsg));
+          else if (msg.t === "bailout" || msg.t === "prestige" || msg.t === "reserve" || msg.t === "claim" || msg.t === "puzzle" || msg.t === "pt" || msg.t === "newsPass") ws.send(JSON.stringify({ t: msg.t, ok: false, error } satisfies ServerMsg));
         } catch { /* 소켓이 이미 닫힘 */ }
       }
     }

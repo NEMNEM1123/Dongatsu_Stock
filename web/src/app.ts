@@ -144,7 +144,10 @@ export function mountApp(root: HTMLElement, user: UserInfo, onLogout: () => void
   const moreWrap = el("main", { class: "rank-wrap more-wrap", hidden: true }, more.el);
   const help = createHelpView();
   const helpWrap = el("main", { class: "rank-wrap help-wrap", hidden: true }, help.el);
-  const news = createNewsStrip();
+  const news = createNewsStrip({
+    onBuy: () => conn.send({ t: "newsPass" }),
+    cost: () => Math.max(0, Math.floor(netWorth(store.account.cash, store.account.positions, (id) => book.priceNow(id)) * RULES.NEWS_PASS_RATE)),
+  });
 
   // 모바일 자산 탭 상단 요약 (데스크톱에서는 숨김)
   const assetsInfo = el("div", { class: "panel assets-summary num" });
@@ -290,7 +293,7 @@ export function mountApp(root: HTMLElement, user: UserInfo, onLogout: () => void
         job.reset(); // 진행 중이던 알바도 마찬가지
         conn.send({ t: "reserves" });
         book.init(m.epoch, m.tickMs, m.viewSeed, m.px, m.days);
-        news.set(m.news);
+        news.set(m.news, m.newsUntil);
         if (!guideSeen() && !guideShown) { guideShown = true; showGuide(); } // 첫 접속 사용법 안내
         else if (patchUnseen() && !patchToasted) {
           patchToasted = true;
@@ -303,6 +306,15 @@ export function mountApp(root: HTMLElement, user: UserInfo, onLogout: () => void
       case "news":
         news.add(m.item);
         toast(`[${nameOf(m.item.stock)}] ${m.item.headline}`, "warn", 8000);
+        break;
+      case "newsPass":
+        if (m.ok) {
+          news.set(m.news, m.until);
+          toast(`뉴스 열람권을 샀어요. ${RULES.NEWS_PASS_MIN}분 동안 뉴스를 볼 수 있어요. (-${won(m.cost)}원)`, "info", 6000);
+        } else {
+          news.resetBuy();
+          toast(m.error, "warn");
+        }
         break;
       case "maintenance":
         serverState = { ...serverState, on: m.on, message: m.message };

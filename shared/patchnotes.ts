@@ -14,6 +14,15 @@ export const PATCH_TAG_LABEL: Record<PatchTag, string> = { new: "새 기능", fi
 
 export const PATCH_NOTES: readonly PatchEntry[] = [
   {
+    id: "2026-11-25.9",
+    date: "2026-11-25",
+    title: "v1.6.0 · 뉴스 열람권",
+    items: [
+      { tag: "change", text: "이벤트가 덜 자주 나와요. 평균 15분에 한 번쯤 발생해요." },
+      { tag: "new", text: "이벤트 뉴스는 '뉴스 열람권'을 사야 볼 수 있어요. 지금 순자산의 10%를 내면 30분 동안 뉴스가 보여요. 열람권이 없어도 가격은 똑같이 움직여요." },
+    ],
+  },
+  {
     id: "2026-11-25.8",
     date: "2026-11-25",
     title: "v1.5.0 · 상남자 마켓",

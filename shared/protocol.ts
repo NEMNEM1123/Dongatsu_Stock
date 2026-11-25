@@ -160,7 +160,8 @@ export type ClientMsg =
   | { t: "claim"; id: string } // 미션 보상 받기
   | { t: "reserves" } // 내 예약 주문 목록
   | { t: "reserve"; stock: number; action: OrderAction; qty: number; leverage?: number; cond: ReserveCond; trigger: number }
-  | { t: "cancelReserve"; id: number };
+  | { t: "cancelReserve"; id: number }
+  | { t: "newsPass" }; // 뉴스 열람권 구매
 
 /** 서버 -> 클라이언트 */
 export type ServerMsg =
@@ -174,7 +175,8 @@ export type ServerMsg =
       user: UserInfo;
       px: { tick: number; p: number[]; ids?: number[] }; // 현재 tick의 종목별 가격. ids는 p의 각 값이 어느 종목인지 (이후 px 메시지도 같은 순서)
       days: DayInit[]; // 종목별 오늘 시가·고가·저가·거래량 (현재 tick까지)
-      news: NewsItem[]; // 최근에 시작된 뉴스
+      news: NewsItem[]; // 최근에 시작된 뉴스 (열람권이 없으면 빈 배열)
+      newsUntil: number; // 뉴스 열람권 만료 시각(ms). 지금보다 이르면 열람권 없음
       maintenance: MaintenanceInfo;
       minVersion: number;
     }
@@ -219,7 +221,9 @@ export type ServerMsg =
     }
   | { t: "hof"; seasons: HofGroup[]; weeks: HofGroup[] }
   | { t: "px"; tick: number; p: number[] } // 매 tick 전송: 종목별 현재가 (STOCKS 순서)
-  | { t: "news"; item: NewsItem } // 이벤트가 적용되는 시점에 전송
+  | { t: "news"; item: NewsItem } // 이벤트가 적용되는 시점에 전송 (열람권이 있는 접속자에게만)
+  | { t: "newsPass"; ok: true; until: number; cost: number; news: NewsItem[] }
+  | { t: "newsPass"; ok: false; error: string }
   | { t: "maintenance"; on: boolean; message: string }
   | { t: "lbTick" } // 순위가 새로 계산됨 → 보고 있다면 다시 요청
   | { t: "feed"; items: FeedItem[] } // 접속 직후: 최근 체결 (최신순)
