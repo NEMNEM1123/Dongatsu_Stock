@@ -14,8 +14,8 @@ const CONFIRM_MS = 3000;
 
 type Tab = "pos" | "reserve" | "trades" | "stats" | "quest" | "feed";
 
-const ACTION: Record<string, string> = { buy: "매수", sell: "매도", short: "공매도", cover: "환매", liquidation: "강제청산", prestige: "프레스티지", lottery: "복권" };
-const actionTone = (a: string): string => (a === "buy" || a === "cover" || a === "lottery" ? "up" : a === "liquidation" || a === "prestige" ? "warn-text" : "down");
+const ACTION: Record<string, string> = { buy: "매수", sell: "매도", short: "공매도", cover: "환매", liquidation: "강제청산", prestige: "프레스티지", lottery: "복권", puzzle: "퍼즐" };
+const actionTone = (a: string): string => (a === "buy" || a === "cover" || a === "lottery" || a === "puzzle" ? "up" : a === "liquidation" || a === "prestige" ? "warn-text" : "down");
 const nameOf = (id: number): string => {
   if (id === 0) return "–";
   try { return getStock(id).name; } catch { return String(id); }
@@ -145,7 +145,7 @@ export function createBottom(): { el: HTMLElement; tick: () => void } {
         { text: nameOf(t.stock) },
         { text: `${ACTION[t.action] ?? t.action}${t.leverage > 1 ? ` ${t.leverage}x` : ""}`, cls: actionTone(t.action) },
         { text: t.action === "prestige" ? `★${t.qty}` : won(t.qty), cls: "num" },
-        { text: t.action === "prestige" || t.action === "lottery" ? "–" : won(t.price), cls: "num" },
+        { text: t.action === "prestige" || t.action === "lottery" || t.action === "puzzle" ? "–" : won(t.price), cls: "num" },
         { text: won(t.fee), cls: "num muted" },
         { text: t.pnl === null ? "–" : signed(t.pnl), cls: `num ${t.pnl === null ? "muted" : tone(t.pnl)}` },
       ],
@@ -165,12 +165,12 @@ export function createBottom(): { el: HTMLElement; tick: () => void } {
     if (!store.feed.length) { feedList.replaceChildren(el("div", { class: "muted empty" }, "아직 체결이 없습니다.")); return; }
     feedList.replaceChildren(
       ...store.feed.map((f) =>
-        f.action === "prestige" || f.action === "lottery"
+        f.action === "prestige" || f.action === "lottery" || f.action === "puzzle"
           ? el(
               "div",
               { class: "feed-row" },
               el("span", { class: "muted num" }, timeText(f.ts)),
-              el("span", { class: "warn-text" }, f.action === "prestige" ? `${f.nick} 님이 프레스티지 ★${f.qty} 달성!` : `${f.nick} 님이 복권 ${won(f.qty)}원 당첨!`),
+              el("span", { class: "warn-text" }, f.action === "prestige" ? `${f.nick} 님이 프레스티지 ★${f.qty} 달성!` : f.action === "puzzle" ? `${f.nick} 님이 블록 채우기로 ${won(f.qty)}원 획득!` : `${f.nick} 님이 복권 ${won(f.qty)}원 당첨!`),
             )
           : el(
           "div",

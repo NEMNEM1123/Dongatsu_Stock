@@ -9,7 +9,7 @@ import { toast } from "./toast";
 
 /** 상단 바: 로고 · 탭 · 접속자 · 내 순자산 */
 export function createTopbar(onLogout: () => void): { el: HTMLElement; tick: () => void; setOnline: (n: number) => void } {
-  const tabs: [string, string][] = [["stock", "거래소"], ["coin", "코인"], ["lottery", "복권"], ["rank", "순위"], ["help", "사용법"], ["more", "더보기"]];
+  const tabs: [string, string][] = [["stock", "거래소"], ["coin", "코인"], ["lottery", "복권"], ["puzzle", "퍼즐"], ["rank", "순위"], ["help", "사용법"], ["more", "더보기"]];
   const tabEls = new Map<string, HTMLElement>();
   const nav = el("nav", { class: "nav" });
   for (const [key, label] of tabs) {
@@ -20,6 +20,7 @@ export function createTopbar(onLogout: () => void): { el: HTMLElement; tick: () 
         store.setMarket(key);
       } else if (key === "rank") store.setView("rank");
       else if (key === "lottery") store.setView("lottery");
+      else if (key === "puzzle") store.setView("puzzle");
       else if (key === "help") store.openHelp(store.helpTab);
       else if (key === "more") store.setView("more");
       else toast(`${label}은(는) 준비 중입니다.`);

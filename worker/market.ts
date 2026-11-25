@@ -9,6 +9,8 @@ import {
 } from "../shared/trading";
 import { KST_MS } from "../shared/candles";
 import { LOTTERY_TOTAL_WEIGHT, prizeForRoll } from "../shared/lottery";
+import { payoutFor } from "../shared/puzzle";
+import { cashOut, checkBet, isExpired, lose, newRun, nextStage, puzzleOf, remainMs, submit as submitPuzzle, type Outcome, type Run } from "../shared/puzzlerun";
 import { achievementViews, claimKey, missionViews, summarize, type LotterySummary, type TradeRow } from "../shared/records";
 import { firstTrigger, isClosing, parseReserve, type ReserveCond, type ReserveItem, type ReserveStatus } from "../shared/reserve";
 import { toEffect, validateEvent, type EventInput } from "../shared/events";
@@ -17,7 +19,7 @@ import {
   gainValues, liveValues, METRICS, peakUpdate, PERIODS, rankBy, startCapital, weekIdOf, weekLabel,
   type Baseline, type Metric, type UserSnap, type Values,
 } from "../shared/leaderboard";
-import type { DayInit, Fill, FeedItem, HofGroup, LbEntry, MaintenanceInfo, NewsItem, OrderAction, PositionInfo, TradeRecord } from "../shared/protocol";
+import type { DayInit, Fill, FeedItem, HofGroup, LbEntry, MaintenanceInfo, NewsItem, OrderAction, PositionInfo, PuzzleView, TradeRecord } from "../shared/protocol";
 import { getStock, STOCKS } from "../shared/stocks";
 import {
   fromHex,
@@ -538,6 +540,30 @@ export class Market extends DurableObject<Env> {
         ) WITHOUT ROWID;
       `);
       v = 8;
+    }
+
+    if (v < 9) {
+      this.sql.exec(`
+        CREATE TABLE puzzle_runs (
+          user_id INTEGER PRIMARY KEY,
+          bet INTEGER NOT NULL,
+          cleared INTEGER NOT NULL,
+          stage INTEGER NOT NULL,
+          seed INTEGER NOT NULL,
+          started_at INTEGER NOT NULL,
+          phase TEXT NOT NULL
+        );
+        CREATE TABLE puzzle_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          ts INTEGER NOT NULL,
+          bet INTEGER NOT NULL,
+          cleared INTEGER NOT NULL,
+          payout INTEGER NOT NULL
+        );
+        CREATE INDEX puzzle_log_user ON puzzle_log (user_id, id);
+      `);
+      v = 9;
     }
 
     this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)", String(v));
@@ -1502,6 +1528,135 @@ export class Market extends DurableObject<Env> {
     }
   }
 
+  // ── 블록 채우기 퍼즐 ──
+  private loadRun(userId: number): Run | null {
+    const r = this.sql
+      .exec("SELECT bet, cleared, stage, seed, started_at, phase FROM puzzle_runs WHERE user_id = ?", userId)
+      .toArray()[0];
+    if (!r) return null;
+    return {
+      bet: Number(r.bet), cleared: Number(r.cleared), stage: Number(r.stage), seed: Number(r.seed),
+      startedAt: Number(r.started_at), phase: r.phase === "choice" ? "choice" : "play",
+    };
+  }
+
+  private saveRun(userId: number, run: Run): void {
+    this.sql.exec(
+      "INSERT OR REPLACE INTO puzzle_runs (user_id, bet, cleared, stage, seed, started_at, phase) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      userId, run.bet, run.cleared, run.stage, run.seed, run.startedAt, run.phase,
+    );
+  }
+
+  /** 판을 끝내고 받을 돈을 계좌에 넣는다. 배팅액은 시작할 때 이미 빠져 있다. (트랜잭션 안에서 호출) */
+  private finishRun(userId: number, o: Outcome): void {
+    this.sql.exec("DELETE FROM puzzle_runs WHERE user_id = ?", userId);
+    if (o.payout > 0) this.setCash(userId, this.getCash(userId) + o.payout);
+    this.sql.exec("INSERT INTO puzzle_log (user_id, ts, bet, cleared, payout) VALUES (?, ?, ?, ?, ?)", userId, Date.now(), o.bet, o.cleared, o.payout);
+    if (o.payout >= RULES.PUZZLE_FEED_MIN) this.recordTrade(userId, 0, "puzzle", o.payout, 0, 0, o.payout - o.bet, 1);
+  }
+
+  private puzzleView(run: Run | null, outcome: Outcome | null, now: number): PuzzleView {
+    if (run) {
+      return {
+        phase: run.phase, bet: run.bet, cleared: run.cleared, stage: run.stage,
+        puzzle: run.phase === "play" ? puzzleOf(run) : null,
+        remainMs: remainMs(run, now),
+        cashValue: payoutFor(run.bet, run.cleared),
+        nextValue: payoutFor(run.bet, run.cleared + 1),
+        outcome: null,
+      };
+    }
+    if (outcome) {
+      return { phase: "over", bet: outcome.bet, cleared: outcome.cleared, stage: outcome.cleared, puzzle: null, remainMs: 0, cashValue: 0, nextValue: 0, outcome };
+    }
+    return { phase: "idle", bet: 0, cleared: 0, stage: 0, puzzle: null, remainMs: 0, cashValue: 0, nextValue: 0, outcome: null };
+  }
+
+  /**
+   * 퍼즐 진행: 배팅 차감·퍼즐 생성·시간 판정·정답 검사·정산을 모두 서버가 한 트랜잭션으로 처리한다.
+   * 제한 시간은 서버 시각 기준이고, 화면의 타이머는 보여 주기만 한다.
+   */
+  private handlePuzzle(ws: WebSocket, att: Attachment, msg: Extract<ClientMsg, { t: "puzzle" }>): void {
+    if (msg.act !== "state" && this.rateLimited(att.userId)) {
+      ws.send(JSON.stringify({ t: "puzzle", ok: false, error: "너무 빠릅니다. 잠시 후 다시 시도하세요." } satisfies ServerMsg));
+      return;
+    }
+    let out: ServerMsg | null = null;
+    let events: LiquidationEvent[] = [];
+    let moneyMoved = false;
+    let bigWin = 0;
+    const uid = att.userId;
+
+    this.ctx.storage.transactionSync(() => {
+      const now = Date.now();
+      const st: { run: Run | null; over: Outcome | null } = { run: this.loadRun(uid), over: null };
+      const finish = (o: Outcome): void => {
+        this.finishRun(uid, o);
+        st.run = null;
+        st.over = o;
+        moneyMoved = true;
+        if (o.payout >= RULES.PUZZLE_FEED_MIN) bigWin = o.payout;
+      };
+      const view = (): PuzzleView => this.puzzleView(st.run, st.over, now);
+      const ok = (): void => { out = { t: "puzzle", ok: true, view: view() }; };
+      const err = (error: string): void => { out = { t: "puzzle", ok: false, error, view: view() }; };
+
+      // 제한 시간이 지난 판은 무엇을 요청하든 먼저 패배로 정산한다
+      if (st.run && isExpired(st.run, now)) finish(lose(st.run));
+
+      if (msg.act === "state") return ok();
+
+      if (msg.act === "start") {
+        if (st.run) return err("진행 중인 판이 있습니다.");
+        const bad = checkBet(msg.bet);
+        if (bad) return err(bad);
+        events = this.liquidateUser(uid);
+        const cash = this.getCash(uid);
+        if (msg.bet > cash) return err("잔고가 부족합니다.");
+        this.setCash(uid, cash - msg.bet);
+        st.over = null;
+        st.run = newRun(msg.bet, randomBelow(0x7fffffff), now);
+        this.saveRun(uid, st.run);
+        moneyMoved = true;
+        return ok();
+      }
+
+      // 이번 요청 직전에 시간 초과로 끝난 판이면 오류가 아니라 "끝났다"는 결과(over)를 그대로 알려 준다
+      if (!st.run) return st.over ? ok() : err("진행 중인 판이 없습니다.");
+
+      if (msg.act === "submit") {
+        const r = submitPuzzle(st.run, Array.isArray(msg.placements) ? msg.placements : [], now);
+        if (r.k === "invalid") return err(r.error);
+        if (r.k === "expired" || r.k === "max") finish(r.outcome);
+        else { st.run = r.run; this.saveRun(uid, st.run); }
+        return ok();
+      }
+
+      if (msg.act === "next") {
+        const n = nextStage(st.run, randomBelow(0x7fffffff), now);
+        if (!n) return err("지금은 다음 단계로 갈 수 없습니다.");
+        st.run = n;
+        this.saveRun(uid, n);
+        return ok();
+      }
+
+      if (msg.act === "cash") {
+        const o = cashOut(st.run);
+        if (!o) return err("지금은 정산할 수 없습니다.");
+        finish(o);
+        return ok();
+      }
+      err("알 수 없는 요청입니다.");
+    });
+
+    this.notifyLiquidations(events);
+    ws.send(JSON.stringify(out ?? { t: "puzzle", ok: false, error: "처리하지 못했습니다." }));
+    if (moneyMoved) ws.send(JSON.stringify(this.accountMsg(uid)));
+    if (bigWin > 0) {
+      this.broadcast({ t: "fill", item: { ts: Date.now(), nick: att.nickname, stock: 0, action: "puzzle", qty: bigWin, price: 0 } });
+    }
+  }
+
   /** 프레스티지: 순자산이 기준 이상일 때만. 포지션을 모두 지우고 별 +1, 현금은 새 시작 자금으로 초기화. */
   private handlePrestige(ws: WebSocket, att: Attachment): void {
     let out: ServerMsg = { t: "prestige", ok: false, error: "처리하지 못했습니다." };
@@ -1960,7 +2115,7 @@ export class Market extends DurableObject<Env> {
       const att = ws.deserializeAttachment() as Attachment | null;
       if (!att) return;
       const blocked =
-        msg.t === "order" || msg.t === "bailout" || msg.t === "lottery" || msg.t === "prestige" || msg.t === "reserve" || msg.t === "claim"
+        msg.t === "order" || msg.t === "bailout" || msg.t === "lottery" || msg.t === "prestige" || msg.t === "reserve" || msg.t === "claim" || msg.t === "puzzle"
           ? this.gate(att)
           : null;
       if (blocked) {
@@ -1983,6 +2138,7 @@ export class Market extends DurableObject<Env> {
         else if (msg.t === "lb") this.handleLb(ws, att, msg);
         else if (msg.t === "hof") this.handleHof(ws);
         else if (msg.t === "lottery") this.handleLottery(ws, att, msg);
+        else if (msg.t === "puzzle") this.handlePuzzle(ws, att, msg);
         else if (msg.t === "prestige") this.handlePrestige(ws, att);
         else if (msg.t === "stats") this.handleStats(ws, att);
         else if (msg.t === "quests") this.handleQuests(ws, att);
@@ -1996,7 +2152,7 @@ export class Market extends DurableObject<Env> {
         try {
           if (msg.t === "order") ws.send(JSON.stringify({ t: "order", id: Number(msg.id) || 0, ok: false, error } satisfies ServerMsg));
           else if (msg.t === "lottery") ws.send(JSON.stringify({ t: "lottery", ok: false, error } satisfies ServerMsg));
-          else if (msg.t === "bailout" || msg.t === "prestige" || msg.t === "reserve" || msg.t === "claim") ws.send(JSON.stringify({ t: msg.t, ok: false, error } satisfies ServerMsg));
+          else if (msg.t === "bailout" || msg.t === "prestige" || msg.t === "reserve" || msg.t === "claim" || msg.t === "puzzle") ws.send(JSON.stringify({ t: msg.t, ok: false, error } satisfies ServerMsg));
         } catch { /* 소켓이 이미 닫힘 */ }
       }
     }

@@ -66,6 +66,7 @@ export function createMoreView(opts: { onLogout: () => void; openGuide: () => vo
       { class: "menu-grid" },
       menuBtn("순위", () => store.setView("rank"), "mobile-only"),
       menuBtn("복권", () => store.setView("lottery"), "mobile-only"),
+      menuBtn("퍼즐", () => store.setView("puzzle"), "mobile-only"),
       menuBtn("사용법", () => store.openHelp("guide"), "mobile-only"),
       patchBtn,
       menuBtn("빠른 시작 안내", opts.openGuide, ""),

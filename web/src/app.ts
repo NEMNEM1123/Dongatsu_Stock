@@ -15,6 +15,7 @@ import { createOrderPanel } from "./orderpanel";
 import { book } from "./pricebook";
 import { createMoreView } from "./admin";
 import { createLotteryView } from "./lottery";
+import { createPuzzleView } from "./puzzle";
 import { createNewsStrip } from "./news";
 import { hideOverlay, showOverlay } from "./overlay";
 import { createRankView } from "./rank";
@@ -134,6 +135,8 @@ export function mountApp(root: HTMLElement, user: UserInfo, onLogout: () => void
   const rankWrap = el("main", { class: "rank-wrap", hidden: true }, rank.el);
   const lottery = createLotteryView();
   const lotteryWrap = el("main", { class: "rank-wrap", hidden: true }, lottery.el);
+  const puzzle = createPuzzleView();
+  const puzzleWrap = el("main", { class: "rank-wrap", hidden: true }, puzzle.el);
   const more = createMoreView({ onLogout, openGuide: showGuide });
   const moreWrap = el("main", { class: "rank-wrap more-wrap", hidden: true }, more.el);
   const help = createHelpView();
@@ -182,7 +185,7 @@ export function mountApp(root: HTMLElement, user: UserInfo, onLogout: () => void
   });
 
   root.classList.add("app-main");
-  root.replaceChildren(banner, topbar.el, infobar.el, news.el, layout, rankWrap, lotteryWrap, moreWrap, helpWrap, backdrop, tabbar);
+  root.replaceChildren(banner, topbar.el, infobar.el, news.el, layout, rankWrap, lotteryWrap, puzzleWrap, moreWrap, helpWrap, backdrop, tabbar);
   syncBar();
 
   // 거래소 / 순위 / 복권 화면 전환
@@ -192,6 +195,7 @@ export function mountApp(root: HTMLElement, user: UserInfo, onLogout: () => void
     layout.hidden = v !== "trade";
     rankWrap.hidden = v !== "rank";
     lotteryWrap.hidden = v !== "lottery";
+    puzzleWrap.hidden = v !== "puzzle";
     moreWrap.hidden = v !== "more";
     helpWrap.hidden = v !== "help";
     news.el.classList.toggle("off", v !== "trade");
@@ -201,6 +205,7 @@ export function mountApp(root: HTMLElement, user: UserInfo, onLogout: () => void
     if (v === "rank") rank.show();
     else if (v === "trade") reselect(); // 차트가 숨겨진 동안 크기가 0이었으므로 다시 맞춘다
     else if (v === "help") help.show();
+    else if (v === "puzzle") puzzle.show();
     else lottery.update();
   });
 
@@ -267,6 +272,7 @@ export function mountApp(root: HTMLElement, user: UserInfo, onLogout: () => void
   // ── 서버 메시지 ──
   conn.onStatus = (s) => {
     banner.hidden = s === "open";
+    if (s === "closed") puzzle.reset();
     if (s === "closed") lottery.reset(); // 응답을 기다리던 중 끊기면 버튼이 잠긴 채 남지 않게
   };
   conn.onMessage = (m) => {
@@ -275,6 +281,7 @@ export function mountApp(root: HTMLElement, user: UserInfo, onLogout: () => void
         store.online = m.online;
         topbar.setOnline(m.online);
         lottery.reset();
+        puzzle.reset(); // 진행 중이던 판이 있으면 이어서 보여 준다
         conn.send({ t: "reserves" });
         book.init(m.epoch, m.tickMs, m.viewSeed, m.px, m.days);
         news.set(m.news);
@@ -368,6 +375,10 @@ export function mountApp(root: HTMLElement, user: UserInfo, onLogout: () => void
       case "lottery":
         lottery.onResult(m);
         if (m.ok && m.payout >= RULES.LOTTERY_PRICE * count0(m)) toast(`복권 당첨금 ${won(m.payout)}원`, "up");
+        break;
+      case "puzzle":
+        puzzle.onResult(m);
+        if (m.ok && m.view.phase === "over" && m.view.outcome && m.view.outcome.payout >= RULES.PUZZLE_FEED_MIN) toast(`블록 채우기 ${won(m.view.outcome.payout)}원 획득!`, "up", 6000);
         break;
       case "prestige":
         if (m.ok) toast(`프레스티지! 별 ${m.stars}개 · 시작 자금 ${won(m.cash ?? 0)}원으로 초기화되었습니다.`, "up", 6000);

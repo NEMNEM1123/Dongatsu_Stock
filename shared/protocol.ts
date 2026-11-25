@@ -5,6 +5,8 @@ import type { Position } from "./trading";
 import type { Metric, Period } from "./leaderboard";
 import type { AchievementView, MissionView, MyStats } from "./records";
 import type { ReserveCond, ReserveItem } from "./reserve";
+import type { Placement, Puzzle } from "./puzzle";
+import type { Outcome } from "./puzzlerun";
 
 export interface Checkpoint {
   stock: number;
@@ -31,7 +33,7 @@ export interface Fill {
 export interface TradeRecord {
   ts: number;
   stock: number;
-  action: OrderAction | "liquidation" | "prestige" | "lottery";
+  action: OrderAction | "liquidation" | "prestige" | "lottery" | "puzzle";
   qty: number;
   price: number;
   fee: number;
@@ -54,7 +56,7 @@ export interface FeedItem {
   ts: number;
   nick: string;
   stock: number; // 프레스티지·복권은 0
-  action: OrderAction | "liquidation" | "prestige" | "lottery"; // prestige: qty=새 별 수 / lottery: qty=당첨금
+  action: OrderAction | "liquidation" | "prestige" | "lottery" | "puzzle"; // prestige: qty=새 별 수 / lottery·puzzle: qty=받은 금액
   qty: number;
   price: number;
 }
@@ -93,6 +95,19 @@ export interface HofGroup {
   top: Record<Metric, HofRow[]>;
 }
 
+/** 블록 채우기 판의 현재 모습. 정답 정보는 들어 있지 않다. */
+export interface PuzzleView {
+  phase: "idle" | "play" | "choice" | "over";
+  bet: number;
+  cleared: number;
+  stage: number;
+  puzzle: Puzzle | null; // play일 때만
+  remainMs: number; // play일 때 표시용 남은 시간 (네트워크 여유 제외)
+  cashValue: number; // 지금 정산하면 받는 금액 (choice)
+  nextValue: number; // 다음 단계를 깨면 정산할 수 있는 금액 (choice)
+  outcome: Outcome | null; // over일 때
+}
+
 export interface UserInfo {
   id: number;
   nickname: string;
@@ -116,6 +131,9 @@ export type ClientMsg =
   | { t: "lb"; period: Period; metric: Metric }
   | { t: "hof" }
   | { t: "lottery"; count: number }
+  | { t: "puzzle"; act: "state" | "next" | "cash" }
+  | { t: "puzzle"; act: "start"; bet: number }
+  | { t: "puzzle"; act: "submit"; placements: Placement[] }
   | { t: "prestige" }
   | { t: "trades" }
   | { t: "bailout" }
@@ -155,6 +173,8 @@ export type ServerMsg =
   | { t: "account"; cash: number; positions: PositionInfo[]; bailoutLeft: number; stars: number; lotteryLeft: number }
   | { t: "lottery"; ok: true; payouts: number[]; cost: number; payout: number; left: number }
   | { t: "lottery"; ok: false; error: string }
+  | { t: "puzzle"; ok: true; view: PuzzleView }
+  | { t: "puzzle"; ok: false; error: string; view?: PuzzleView } // view가 있으면 판은 그대로 이어진다
   | { t: "prestige"; ok: boolean; error?: string; stars?: number; cash?: number }
   | { t: "liquidated"; stock: number; side: "long" | "short"; qty: number; price: number; returned: number }
   | { t: "trades"; trades: TradeRecord[] }

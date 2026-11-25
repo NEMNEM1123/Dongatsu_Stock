@@ -359,3 +359,34 @@ table.grid tbody tr.liq-near { background: color-mix(in srgb, var(--warn, #e0a03
 .has-dot::after { position: absolute; top: 6px; right: 2px; }
 .tab .dot { margin-left: 6px; vertical-align: middle; }
 .tab .dot[hidden] { display: none; }
+
+/* ── 블록 채우기 ── */
+.puzzle-view { flex: 1; min-width: 0; max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; overflow: auto; }
+.pz-body { padding: 14px; display: flex; flex-direction: column; gap: 12px; word-break: keep-all; }
+.pz-quick .seg-btn { height: 32px; }
+.pz-result { min-height: 20px; }
+.pz-clear { font-size: 20px; font-weight: 700; color: var(--accent); }
+.pz-head { display: flex; align-items: center; gap: 12px; font-weight: 600; }
+.pz-timer { height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; }
+.pz-timer > i { display: block; height: 100%; width: 100%; background: var(--accent); }
+.pz-timer > i.low { background: var(--up); }
+.pz-stagewrap { display: flex; justify-content: center; }
+.pz-board { --pz-gap: 2px; display: grid; gap: var(--pz-gap); width: min(100%, 460px); aspect-ratio: 1; touch-action: manipulation; user-select: none; }
+.pz-cell { background: var(--panel-2); border: 1px solid var(--line); border-radius: 2px; cursor: pointer; min-width: 0; }
+.pz-cell.ghost-ok { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--up-bg); }
+.pz-cell.ghost-bad { outline: 2px solid var(--warn); outline-offset: -2px; }
+.pz-tools { display: flex; gap: 6px; }
+.pz-tray { display: flex; flex-wrap: wrap; gap: 8px; min-height: 64px; align-items: flex-start; }
+.pz-piece { background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; cursor: pointer; }
+.pz-piece.on { border-color: var(--accent); }
+.pz-mini { --pz-mini: 16px; display: grid; gap: 2px; }
+.pz-mini > i { width: var(--pz-mini); height: var(--pz-mini); border-radius: 2px; display: block; }
+.pz-mini > i.gap { background: transparent; }
+.pz-msg { min-height: 18px; }
+.pz-help { font-size: 12px; }
+.pz-stages td:first-child, .pz-stages th:first-child { white-space: nowrap; }
+.pc0 { background: #e8a33d99; } .pc1 { background: #2f80ed99; } .pc2 { background: #f2364599; } .pc3 { background: #3fb68b99; }
+.pc4 { background: #a77bdb99; } .pc5 { background: #d9d35a99; } .pc6 { background: #4cc3d999; } .pc7 { background: #e07fb099; }
+@media (max-width: 900px) {
+  .pz-mini { --pz-mini: 14px; }
+}
