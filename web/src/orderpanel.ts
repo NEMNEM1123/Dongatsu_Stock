@@ -1,5 +1,5 @@
 import { RULES } from "../../shared/rules";
-import { getStock } from "../../shared/stocks";
+import { getStock, leveragesOf } from "../../shared/stocks";
 import type { OrderAction } from "../../shared/protocol";
 import { describeCondition, isClosing, type ReserveCond } from "../../shared/reserve";
 import {
@@ -35,7 +35,7 @@ export function createOrderPanel(): { el: HTMLElement; tick: () => void; setTab:
   const levWrap = el("div", { class: "op-row" }, el("span", { class: "muted" }, "레버리지"));
   const levBtns = new Map<number, HTMLElement>();
   const levBox = el("div", { class: "seg" });
-  for (const l of RULES.LEVERAGES) {
+  for (const l of [...RULES.LEVERAGES, ...RULES.MACHO_LEVERAGES]) {
     const b = el("button", { class: "seg-btn", type: "button" }, `${l}x`);
     b.onclick = () => { leverage = l; cancelArm(); update(); };
     levBtns.set(l, b);
@@ -121,7 +121,7 @@ export function createOrderPanel(): { el: HTMLElement; tick: () => void; setTab:
   function quickQty(p: number): number {
     const price = priceNow();
     const cash = store.account.cash;
-    if (tab === "buy") return p === 1 ? maxBuyQty(cash, price, leverage) : Math.floor(maxBuyQty(cash, price, leverage) * p);
+    if (tab === "buy") return p === 1 ? maxBuyQty(cash, price, leverage, stockId()) : Math.floor(maxBuyQty(cash, price, leverage, stockId()) * p);
     if (tab === "short") return p === 1 ? maxShortQty(cash, price) : Math.floor(maxShortQty(cash, price) * p);
     const held = (sellAction() === "sell" ? heldLong() : heldShort())?.qty ?? 0;
     return p === 1 ? held : Math.floor(held * p);
@@ -206,6 +206,7 @@ export function createOrderPanel(): { el: HTMLElement; tick: () => void; setTab:
   function setTab(t: Tab): void {
     tab = t;
     if (t !== "buy") leverage = 1;
+    else if (!leveragesOf(stockId()).includes(leverage)) leverage = leveragesOf(stockId())[0]!;
     resetTrigger();
     cancelArm();
     update();
@@ -218,8 +219,14 @@ export function createOrderPanel(): { el: HTMLElement; tick: () => void; setTab:
       b.setAttribute("aria-selected", String(k === tab));
       setClass(b, `tab tab-${k}`);
     }
+    const macho = getStock(stockId()).kind === "macho";
+    // 상남자 종목은 공매도가 없고, 레버리지는 10~50배 중에서만 고른다
+    if (macho && tab === "short") tab = "buy";
+    const allowed = leveragesOf(stockId());
+    if (!allowed.includes(leverage) && tab === "buy") leverage = allowed[0]!;
+    tabBtns.get("short")!.hidden = macho;
     levWrap.hidden = tab !== "buy";
-    for (const [l, b] of levBtns) setClass(b, `seg-btn${l === leverage ? " on" : ""}`);
+    for (const [l, b] of levBtns) { b.hidden = !allowed.includes(l); setClass(b, `seg-btn${l === leverage ? " on" : ""}`); }
     const a = currentAction();
     setText(tabBtns.get("sell")!, sellAction() === "cover" && tab === "sell" ? "환매" : "매도");
     setClass(exec, `btn btn-lg ${a === "buy" || a === "cover" ? "btn-buy" : "btn-sell"}`);

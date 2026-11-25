@@ -1,7 +1,7 @@
 // 결정적 시세 엔진. 같은 (seed, 종목, tick, effects)이면 어디서든 같은 가격.
 // 사칙연산(IEEE 754 정확 연산)과 Math.round만 사용한다. exp/log/cos 등은 쓰지 않는다.
 
-import { RULES, VOLATILITY } from "./rules";
+import { DRIFT, RULES, VOLATILITY } from "./rules";
 import type { StockDef } from "./stocks";
 
 /** 구간 [startTick, endTick) 동안 틱당 수익률에 driftPpm(백만분율, 정수)을 더한다. */
@@ -61,7 +61,7 @@ export function step(
   effects?: readonly Effect[],
 ): number {
   const vol = VOLATILITY[stock.profile];
-  let r = vol * gauss(seed, stock.id, tick);
+  let r = vol * gauss(seed, stock.id, tick) + (DRIFT[stock.profile] ?? 0);
   r += (RULES.PRICE_REVERT * (stock.basePrice - prevPrice)) / stock.basePrice;
   if (rand(seed, stock.id, tick, 5) < RULES.JUMP_PROB) {
     const sign = rand(seed, stock.id, tick, 6) < 0.5 ? -1 : 1;

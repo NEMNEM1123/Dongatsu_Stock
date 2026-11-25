@@ -23,6 +23,7 @@ export const RULES = {
   // 계좌
   START_CASH: 10_000_000,
   FEE_RATE: 0.001,
+  MACHO_FEE_RATES: { 10: 0.002, 20: 0.003, 30: 0.004, 50: 0.005 } as Record<number, number>, // 상남자 마켓 수수료율(레버리지별). 배율이 높을수록 비싸다.
 
   // 가격 모델
   PRICE_FLOOR: 100,
@@ -32,6 +33,7 @@ export const RULES = {
 
   // 레버리지
   LEVERAGES: [1, 2, 3, 5] as const,
+  MACHO_LEVERAGES: [10, 20, 30, 50] as const, // 상남자 마켓 전용. 50배는 약 1.5%만 반대로 움직여도 청산된다. 공매도는 불가.
   MAINTENANCE_MARGIN: 0.25, // 내 증거금 대비 남은 순자산이 이 비율 미만이면 강제 청산 (레버리지 2배 이상)
 
   LIQ_WARN_RATIO: 0.05, // 현재가가 청산가까지 이 비율 이내로 다가오면 경고 (표시 전용, 체결과 무관)
@@ -158,6 +160,12 @@ export const VOLATILITY = {
   normal: 0.0006,
   volatile: 0.0012,
   coin: 0.002,
+  macho: 0.004, // 상남자 마켓: 코인의 두 배. 1분에 평균 2% 안팎으로 출렁인다.
 } as const;
+
+// 종목 성격별 틱당 추세(비율). 없으면 0. 상남자 마켓은 오르는 쪽보다 내리는 쪽으로 약하게 기울어 있어서 오래 들고 있을수록 불리하다.
+export const DRIFT: Partial<Record<keyof typeof VOLATILITY, number>> = {
+  macho: -0.00002,
+};
 
 export type Profile = keyof typeof VOLATILITY;

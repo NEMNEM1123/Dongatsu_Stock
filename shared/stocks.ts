@@ -4,7 +4,7 @@ export interface StockDef {
   id: number; // 난수 입력으로 쓰이므로 한 번 정하면 바꾸지 않는다
   code: string;
   name: string;
-  kind: "stock" | "coin" | "etf";
+  kind: "stock" | "coin" | "etf" | "macho";
   profile: Profile; // ETF는 쓰지 않는다 (자체 가격 변동이 없다)
   basePrice: number; // 시작가 겸 되돌아가는 기준가 (원). ETF는 구성 종목이 모두 기준가일 때의 가격
   components?: readonly { id: number; weight: number }[]; // ETF 구성 종목과 비중
@@ -33,6 +33,13 @@ export const STOCKS: readonly StockDef[] = [
   { id: 104, code: "C04", name: "조현수의 롯데리아 돈가스 코인", kind: "coin", profile: "coin", basePrice: 3_000 },
   { id: 105, code: "C05", name: "김릉환의 해병 돈가스 코인", kind: "coin", profile: "coin", basePrice: 20_000 },
   { id: 106, code: "C06", name: "조현수의 예비 6767번 돈가스 코인", kind: "coin", profile: "coin", basePrice: 6_767 },
+  // 상남자 마켓: 변동이 매우 크고 레버리지 50배까지 쓸 수 있다. 공매도는 없다. 오를 때보다 내릴 때가 많게 설계했다.
+  { id: 301, code: "M01", name: "임시종목1", kind: "macho", profile: "macho", basePrice: 30_000 },
+  { id: 302, code: "M02", name: "임시종목2", kind: "macho", profile: "macho", basePrice: 50_000 },
+  { id: 303, code: "M03", name: "임시종목3", kind: "macho", profile: "macho", basePrice: 20_000 },
+  { id: 304, code: "M04", name: "임시종목4", kind: "macho", profile: "macho", basePrice: 80_000 },
+  { id: 305, code: "M05", name: "임시종목5", kind: "macho", profile: "macho", basePrice: 15_000 },
+  { id: 306, code: "M06", name: "임시종목6", kind: "macho", profile: "macho", basePrice: 100_000 },
   // ETF: 구성 종목의 (현재가 ÷ 기준가)를 비중대로 평균해 ETF 시작가에 곱한 값. 자체 난수가 없고 구성 종목이 움직이는 대로 따라간다.
   { id: 201, code: "E01", name: "돈까스 종합 ETF", kind: "etf", profile: "stable", basePrice: 50_000, components: eq(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14) },
   { id: 202, code: "E02", name: "안정형 돈까스 ETF", kind: "etf", profile: "stable", basePrice: 50_000, components: eq(1, 2, 3, 11) },
@@ -51,6 +58,11 @@ export function etfPrice(def: StockDef, priceOf: (id: number) => number): number
     weights += c.weight;
   }
   return Math.max(RULES.PRICE_FLOOR, Math.round((def.basePrice * sum) / weights));
+}
+
+/** 이 종목에서 고를 수 있는 레버리지. 상남자 마켓은 10~50배만, 나머지는 1~5배. */
+export function leveragesOf(id: number): readonly number[] {
+  return STOCKS.find((s) => s.id === id)?.kind === "macho" ? RULES.MACHO_LEVERAGES : RULES.LEVERAGES;
 }
 
 export function getStock(id: number): StockDef {

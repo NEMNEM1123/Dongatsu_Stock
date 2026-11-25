@@ -3,6 +3,7 @@
 // 예) 지정가 매수 = buy + le, 손절(롱) = sell + le, 익절(롱) = sell + ge, 숏 손절 = cover + ge, 숏 익절 = cover + le
 
 import { RULES } from "./rules";
+import { leveragesOf } from "./stocks";
 import { validQty } from "./trading";
 import type { OrderAction } from "./protocol";
 
@@ -61,7 +62,7 @@ export function parseReserve(raw: Record<string, unknown>): { ok: true; value: R
   if (!validQty(qty)) return { ok: false, error: "수량이 올바르지 않습니다." };
   if (raw.cond !== "le" && raw.cond !== "ge") return { ok: false, error: "조건이 올바르지 않습니다." };
   if (!Number.isInteger(trigger) || trigger < RULES.PRICE_FLOOR) return { ok: false, error: `조건 가격은 ${RULES.PRICE_FLOOR}원 이상의 정수여야 합니다.` };
-  if (action === "buy" && !(RULES.LEVERAGES as readonly number[]).includes(leverage)) return { ok: false, error: "지원하지 않는 레버리지입니다." };
+  if (action === "buy" && !leveragesOf(stock).includes(leverage)) return { ok: false, error: "지원하지 않는 레버리지입니다." };
   return { ok: true, value: { stock, action, qty, leverage, cond: raw.cond, trigger } };
 }
 

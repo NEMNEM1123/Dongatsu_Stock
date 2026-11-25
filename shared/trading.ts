@@ -8,6 +8,7 @@
 // 손실은 margin까지만이고, 잔고는 음수가 되지 않는다.
 
 import { RULES } from "./rules";
+import { leveragesOf, STOCKS } from "./stocks";
 
 export type Side = "long" | "short";
 
@@ -35,7 +36,12 @@ export type OrderResult =
 
 const err = (error: string): OrderResult => ({ ok: false, error });
 
-export const feeOf = (notional: number): number => Math.round(notional * RULES.FEE_RATE);
+const isMacho = (stock?: number): boolean => stock !== undefined && STOCKS.find((s) => s.id === stock)?.kind === "macho";
+const feeRate = (stock?: number, leverage = 1): number =>
+  isMacho(stock) ? (RULES.MACHO_FEE_RATES[leverage] ?? RULES.FEE_RATE) : RULES.FEE_RATE;
+
+/** 수수료. stock을 주면 그 종목의 수수료율로 계산하고, 상남자 종목은 레버리지에 따라 달라진다. */
+export const feeOf = (notional: number, stock?: number, leverage = 1): number => Math.round(notional * feeRate(stock, leverage));
 
 export function validQty(qty: unknown): qty is number {
   return typeof qty === "number" && Number.isInteger(qty) && qty >= 1 && qty <= RULES.MAX_ORDER_QTY;
@@ -102,8 +108,8 @@ function maxQty(cash: number, unitCost: number, costOf: (qty: number) => number)
   return q;
 }
 
-export function maxBuyQty(cash: number, price: number, leverage: number): number {
-  return maxQty(cash, price / leverage + price * RULES.FEE_RATE, (q) => Math.ceil((q * price) / leverage) + feeOf(q * price));
+export function maxBuyQty(cash: number, price: number, leverage: number, stock?: number): number {
+  return maxQty(cash, price / leverage + price * feeRate(stock, leverage), (q) => Math.ceil((q * price) / leverage) + feeOf(q * price, stock, leverage));
 }
 
 export function maxShortQty(cash: number, price: number): number {
@@ -125,7 +131,7 @@ function open(
   const notional = qty * price;
   const margin =
     side === "long" ? Math.ceil(notional / leverage) : Math.ceil(notional * RULES.SHORT_MARGIN);
-  const fee = feeOf(notional);
+  const fee = feeOf(notional, stock, leverage);
   if (margin + fee > cash) return err("잔고가 부족합니다.");
   if (pos && pos.leverage !== leverage) return err(`이미 ${pos.leverage}배 포지션이 있습니다. 같은 배율로만 추가할 수 있습니다.`);
   const position: Position = {
@@ -147,7 +153,7 @@ function close(cash: number, pos: Position | undefined, qty: number, price: numb
   const cost = full ? pos.cost : Math.round((pos.cost * qty) / pos.qty);
   const margin = full ? pos.margin : Math.round((pos.margin * qty) / pos.qty);
   const notional = qty * price;
-  const fee = feeOf(notional);
+  const fee = feeOf(notional, pos.stock, pos.leverage);
   const equity = pos.side === "long" ? margin + notional - cost : margin + cost - notional;
   const returned = Math.max(0, equity - fee);
   const position: Position | null = full
@@ -157,7 +163,7 @@ function close(cash: number, pos: Position | undefined, qty: number, price: numb
 }
 
 export function buy(cash: number, pos: Position | undefined, stock: number, qty: number, price: number, leverage: number): OrderResult {
-  if (!(RULES.LEVERAGES as readonly number[]).includes(leverage)) return err("지원하지 않는 레버리지입니다.");
+  if (!leveragesOf(stock).includes(leverage)) return err(`이 종목은 ${leveragesOf(stock).map((l) => `${l}배`).join("·")}만 고를 수 있습니다.`);
   return open(cash, pos, stock, "long", qty, price, leverage);
 }
 
@@ -165,7 +171,9 @@ export const sell = (cash: number, pos: Position | undefined, qty: number, price
   close(cash, pos, qty, price);
 
 export const short = (cash: number, pos: Position | undefined, stock: number, qty: number, price: number): OrderResult =>
-  open(cash, pos, stock, "short", qty, price, 1);
+  STOCKS.find((s) => s.id === stock)?.kind === "macho"
+    ? err("상남자 마켓에서는 공매도할 수 없습니다.")
+    : open(cash, pos, stock, "short", qty, price, 1);
 
 export const cover = (cash: number, pos: Position | undefined, qty: number, price: number): OrderResult =>
   close(cash, pos, qty, price);

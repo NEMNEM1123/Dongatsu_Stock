@@ -299,6 +299,20 @@ export function helpSections(): Section[] {
       ],
     },
     {
+      id: "macho",
+      title: "12-5. 상남자 마켓",
+      blocks: [
+        { p: `위쪽 '상남자' 메뉴의 종목들은 가격이 코인보다도 크게 출렁이고, 레버리지를 ${RULES.MACHO_LEVERAGES.join("·")}배 중에서 골라 쓸 수 있어요. 크게 벌 수 있는 만큼 대부분은 잃도록 만들어진 곳이에요.` },
+        { ul: [
+          `레버리지는 최소 ${RULES.MACHO_LEVERAGES[0]}배예요. 50배면 가격이 약 1.5%만 반대로 움직여도 강제 청산돼요.`,
+          `수수료가 일반 종목(${pct1(RULES.FEE_RATE)})보다 높고, 레버리지가 높을수록 더 비싸요. ${RULES.MACHO_LEVERAGES.map((l) => `${l}배 ${pct1(RULES.MACHO_FEE_RATES[l]!)}`).join(" · ")}`,
+          "가격이 오르는 쪽보다 내리는 쪽으로 약하게 기울어 있어서, 오래 들고 있을수록 불리해요.",
+          "공매도는 할 수 없어요.",
+        ] },
+        { tip: "처음이라면 일반 종목에서 먼저 연습하세요. 이곳에서는 잃는 사람이 더 많아요." },
+      ],
+    },
+    {
       id: "parttime",
       title: "12-3. 알바",
       blocks: [

@@ -14,6 +14,15 @@ export const PATCH_TAG_LABEL: Record<PatchTag, string> = { new: "새 기능", fi
 
 export const PATCH_NOTES: readonly PatchEntry[] = [
   {
+    id: "2026-11-25.8",
+    date: "2026-11-25",
+    title: "v1.5.0 · 상남자 마켓",
+    items: [
+      { tag: "new", text: "'상남자' 메뉴가 생겼어요. 가격이 코인보다 크게 출렁이는 종목 6개를 레버리지 10·20·30·50배로 거래할 수 있어요." },
+      { tag: "change", text: "상남자 마켓은 수수료가 일반 종목보다 높고(10배 0.2% ~ 50배 0.5%, 레버리지가 높을수록 비싸요), 공매도는 할 수 없어요. 가격이 약하게 내리는 쪽으로 기울어 있어서 잃는 사람이 더 많아요." },
+    ],
+  },
+  {
     id: "2026-11-25.7",
     date: "2026-11-25",
     title: "v1.4.0 · 자동 이벤트",

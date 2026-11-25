@@ -40,9 +40,9 @@ export function createStockList(): { el: HTMLElement; tick: () => void } {
     cols.appendChild(b);
   }
   // 모바일에서는 상단 탭이 없으므로 목록 안에서 주식/코인을 전환한다
-  const mkBtns = new Map<"stock" | "coin" | "etf", HTMLElement>();
+  const mkBtns = new Map<"stock" | "coin" | "etf" | "macho", HTMLElement>();
   const marketTabs = el("div", { class: "tabs sl-market" });
-  for (const [k, label] of [["stock", "주식"], ["coin", "코인"], ["etf", "ETF"]] as ["stock" | "coin" | "etf", string][]) {
+  for (const [k, label] of [["stock", "주식"], ["coin", "코인"], ["etf", "ETF"], ["macho", "상남자"]] as ["stock" | "coin" | "etf" | "macho", string][]) {
     const b = el("button", { class: "tab", type: "button" }, label);
     b.onclick = () => store.setMarket(k);
     mkBtns.set(k, b);
