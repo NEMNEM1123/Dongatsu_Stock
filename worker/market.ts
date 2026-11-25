@@ -20,13 +20,13 @@ import { cashOut, checkBet, isExpired, lose, newRun, nextStage, puzzleOf, remain
 import { achievementViews, claimKey, missionViews, summarize, type LotterySummary, type TradeRow } from "../shared/records";
 import { firstTrigger, isClosing, parseReserve, type ReserveCond, type ReserveItem, type ReserveStatus } from "../shared/reserve";
 import { toEffect, validateEvent, type EventInput } from "../shared/events";
-import { CLIENT_VERSION } from "../shared/version";
+import { CLIENT_VERSION, MIN_CLIENT_VERSION } from "../shared/version";
 import {
   gainValues, liveValues, METRICS, peakUpdate, PERIODS, rankBy, startCapital, weekIdOf, weekLabel,
   type Baseline, type Metric, type UserSnap, type Values,
 } from "../shared/leaderboard";
 import type { DayInit, Fill, FeedItem, HofGroup, LbEntry, MaintenanceInfo, NewsItem, OrderAction, PositionInfo, PtView, PuzzleView, TradeRecord } from "../shared/protocol";
-import { getStock, STOCKS } from "../shared/stocks";
+import { etfPrice, getStock, STOCKS } from "../shared/stocks";
 import {
   fromHex,
   hashPassword,
@@ -157,7 +157,10 @@ export class Market extends DurableObject<Env> {
     const reserved: ReserveDone[] = [];
 
     this.ctx.storage.transactionSync(() => {
-      for (const stock of STOCKS) {
+      // ETF는 구성 종목의 가격으로 계산하므로 주식·코인을 먼저 처리한다
+      const order = [...STOCKS.filter((s) => s.kind !== "etf"), ...STOCKS.filter((s) => s.kind === "etf")];
+      const nowPx = new Map<number, number>(); // 이번 체크포인트(현재 tick)의 종목별 가격
+      for (const stock of order) {
         const row = this.sql
           .exec("SELECT tick, price FROM checkpoints WHERE stock_id = ?", stock.id)
           .toArray()[0];
@@ -176,18 +179,37 @@ export class Market extends DurableObject<Env> {
         } else {
           // 새로 상장하는 종목: 지금 tick에 시작가로 시작한다 (처음 실행할 때는 cur가 0이다)
           tick = cur;
-          price = stock.basePrice;
+          price = stock.kind === "etf" ? etfPrice(stock, (id) => nowPx.get(id)!) : stock.basePrice;
           feed(tick, price);
         }
-        if (row && cur <= tick) continue;
-        const fx = this.effects(stock.id);
+        if (row && cur <= tick) { nowPx.set(stock.id, price); continue; }
         const path = { from: tick + 1, prices: [] as number[] };
-        for (let t = tick + 1; t <= cur; t++) {
-          price = step(stock, seed, t, price, fx);
-          feed(t, price);
-          path.prices.push(price);
+        if (stock.kind === "etf") {
+          // 구성 종목이 같은 구간을 계산했다면 tick마다 ETF 가격을 이어서 계산한다. 어긋나 있으면 현재 tick 가격만 반영한다.
+          const comps = stock.components ?? [];
+          const aligned = comps.every((c) => { const p = paths.get(c.id); return !!p && p.from === tick + 1 && p.prices.length === cur - tick; });
+          if (aligned) {
+            for (let k = 0; k < cur - tick; k++) {
+              price = etfPrice(stock, (id) => paths.get(id)!.prices[k]!);
+              feed(tick + 1 + k, price);
+              path.prices.push(price);
+            }
+          } else if (cur > tick) {
+            price = etfPrice(stock, (id) => nowPx.get(id)!);
+            feed(cur, price);
+            path.from = cur;
+            path.prices.push(price);
+          }
+        } else {
+          const fx = this.effects(stock.id);
+          for (let t = tick + 1; t <= cur; t++) {
+            price = step(stock, seed, t, price, fx);
+            feed(t, price);
+            path.prices.push(price);
+          }
         }
         paths.set(stock.id, path);
+        nowPx.set(stock.id, price);
         tick = Math.max(tick, cur);
 
         this.sql.exec(
@@ -242,6 +264,16 @@ export class Market extends DurableObject<Env> {
   private pathSince(stockId: number, cp: { tick: number; price: number }, to: number): number[] {
     this.seedCache ??= Number(this.meta("seed"));
     const stock = getStock(stockId);
+    if (stock.kind === "etf") {
+      const arrays = new Map<number, number[]>();
+      for (const c of stock.components ?? []) {
+        const r = this.sql.exec("SELECT tick, price FROM checkpoints WHERE stock_id = ?", c.id).toArray()[0];
+        if (!r || Number(r.tick) !== cp.tick) return []; // 구성 종목의 체크포인트가 어긋나 있으면 이어 계산하지 않는다
+        arrays.set(c.id, this.pathSince(c.id, { tick: Number(r.tick), price: Number(r.price) }, to));
+      }
+      const n = Math.max(0, to - cp.tick);
+      return Array.from({ length: n }, (_, k) => etfPrice(stock, (id) => arrays.get(id)![k]!));
+    }
     const fx = this.effects(stockId);
     const out: number[] = [];
     let price = cp.price;
@@ -345,7 +377,7 @@ export class Market extends DurableObject<Env> {
   }
 
   private minVersion(): number {
-    return Number(this.metaOpt("min_version") ?? 0) || 0;
+    return Math.max(MIN_CLIENT_VERSION, Number(this.metaOpt("min_version") ?? 0) || 0);
   }
 
   private latestCheckpoints(): Checkpoint[] {
@@ -1186,7 +1218,7 @@ export class Market extends DurableObject<Env> {
         totalPct: Number(b.totalPct),
         headline: typeof b.headline === "string" ? b.headline.trim() : "",
       };
-      const err = validateEvent(input, cur, STOCKS.some((s) => s.id === input.stock));
+      const err = validateEvent(input, cur, STOCKS.some((s) => s.id === input.stock && s.kind !== "etf"));
       if (err) return fail(400, err);
       const fx = toEffect(input);
       const id = Number(
@@ -1858,6 +1890,8 @@ export class Market extends DurableObject<Env> {
 
   /** 서버 현재 tick 기준 가격. 체크포인트에서 이어 계산하고 메모리에 캐시한다. */
   private priceNow(stockId: number): number {
+    const def = getStock(stockId);
+    if (def.kind === "etf") return etfPrice(def, (id) => this.priceNow(id)); // 구성 종목의 현재가에서 계산
     this.seedCache ??= Number(this.meta("seed"));
     const cur = this.currentTick();
     let st = this.priceCache.get(stockId);
@@ -2223,7 +2257,7 @@ export class Market extends DurableObject<Env> {
       serverNow: Date.now(),
       online: this.onlineCount(),
       user: { id: u.id, nickname: u.nickname, role: u.role },
-      px: this.currentPx(),
+      px: { ...this.currentPx(), ids: STOCKS.map((s) => s.id) },
       days: this.dayInits(),
       news: this.recentNews(),
       maintenance: this.maintenanceInfo(),

@@ -40,9 +40,9 @@ export function createStockList(): { el: HTMLElement; tick: () => void } {
     cols.appendChild(b);
   }
   // 모바일에서는 상단 탭이 없으므로 목록 안에서 주식/코인을 전환한다
-  const mkBtns = new Map<"stock" | "coin", HTMLElement>();
+  const mkBtns = new Map<"stock" | "coin" | "etf", HTMLElement>();
   const marketTabs = el("div", { class: "tabs sl-market" });
-  for (const [k, label] of [["stock", "주식"], ["coin", "코인"]] as ["stock" | "coin", string][]) {
+  for (const [k, label] of [["stock", "주식"], ["coin", "코인"], ["etf", "ETF"]] as ["stock" | "coin" | "etf", string][]) {
     const b = el("button", { class: "tab", type: "button" }, label);
     b.onclick = () => store.setMarket(k);
     mkBtns.set(k, b);
@@ -94,7 +94,7 @@ export function createStockList(): { el: HTMLElement; tick: () => void } {
       setClass(b, base + (k === sortKey ? " active" : ""));
     }
     const q = query.trim().toLowerCase();
-    let list = STOCKS.filter((s) => (store.market === "coin" ? s.kind === "coin" : s.kind === "stock"));
+    let list = STOCKS.filter((s) => s.kind === store.market);
     if (tab === "fav") list = list.filter((s) => store.favorites.has(s.id));
     if (q) list = list.filter((s) => s.name.toLowerCase().includes(q) || s.code.toLowerCase().includes(q));
     const st = new Map(list.map((s) => [s.id, stats(s.id)]));
@@ -134,7 +134,7 @@ export function createStockList(): { el: HTMLElement; tick: () => void } {
   store.on("stock", () => render());
   store.on("market", () => {
     syncMarketTabs();
-    const first = STOCKS.find((s) => (store.market === "coin" ? s.kind === "coin" : s.kind === "stock"));
+    const first = STOCKS.find((s) => s.kind === store.market);
     if (first && STOCKS.find((s) => s.id === store.stock)?.kind !== first.kind) {
       store.autoSelect = true;
       store.setStock(first.id);

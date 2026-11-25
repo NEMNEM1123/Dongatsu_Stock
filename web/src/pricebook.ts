@@ -21,13 +21,17 @@ export class PriceBook {
   tick = 0; // 마지막으로 받은 tick
   ready = false;
   private prices = new Map<number, number>();
+  private order: number[] = STOCKS.map((s) => s.id); // px 배열의 각 칸이 어느 종목인지
   private days = new Map<number, DayStat>();
 
   /** hello(재연결 포함)를 받을 때마다 호출 */
-  init(epoch: number, tickMs: number, viewSeed: number, px: { tick: number; p: number[] }, days: DayInit[]): void {
+  init(epoch: number, tickMs: number, viewSeed: number, px: { tick: number; p: number[]; ids?: number[] }, days: DayInit[]): void {
     this.epoch = epoch;
     this.tickMs = tickMs;
     this.viewSeed = viewSeed;
+    // 서버가 알려 준 종목 순서를 따른다. 이 화면이 아는 종목 목록과 순서가 달라도 가격이 엉뚱한 종목에 붙지 않는다.
+    this.order = px.ids && px.ids.length === px.p.length ? px.ids.slice() : STOCKS.map((s) => s.id);
+    this.prices.clear();
     this.days.clear();
     for (const d of days) this.days.set(d.stock, { day: d.day, open: d.open, high: d.high, low: d.low, volume: d.volume });
     this.tick = px.tick - 1;
@@ -35,18 +39,18 @@ export class PriceBook {
     this.ready = true;
   }
 
-  /** 서버가 보낸 한 tick의 가격 (STOCKS 순서) */
+  /** 서버가 보낸 한 tick의 가격 (hello에서 받은 종목 순서) */
   onPx(tick: number, p: number[]): void {
     if (tick <= this.tick) return;
     this.tick = tick;
     const day = bucketTime(tick, this.epoch, this.tickMs, INTERVALS["1d"]);
-    STOCKS.forEach((s, i) => {
+    this.order.forEach((id, i) => {
       const price = p[i];
-      if (price === undefined) return;
-      this.prices.set(s.id, price);
-      const d = this.days.get(s.id);
+      if (typeof price !== "number" || !Number.isFinite(price)) return; // 값이 없으면 이전 가격을 유지한다
+      this.prices.set(id, price);
+      const d = this.days.get(id);
       if (!d || d.day !== day) {
-        this.days.set(s.id, { day, open: price, high: price, low: price, volume: 0 }); // 자정이 지나 새 하루
+        this.days.set(id, { day, open: price, high: price, low: price, volume: 0 }); // 자정이 지나 새 하루
       } else {
         if (price > d.high) d.high = price;
         if (price < d.low) d.low = price;

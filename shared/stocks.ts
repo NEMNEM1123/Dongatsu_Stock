@@ -1,13 +1,16 @@
-import type { Profile } from "./rules";
+import { RULES, type Profile } from "./rules";
 
 export interface StockDef {
   id: number; // 난수 입력으로 쓰이므로 한 번 정하면 바꾸지 않는다
   code: string;
   name: string;
-  kind: "stock" | "coin";
-  profile: Profile;
-  basePrice: number; // 시작가 겸 되돌아가는 기준가 (원)
+  kind: "stock" | "coin" | "etf";
+  profile: Profile; // ETF는 쓰지 않는다 (자체 가격 변동이 없다)
+  basePrice: number; // 시작가 겸 되돌아가는 기준가 (원). ETF는 구성 종목이 모두 기준가일 때의 가격
+  components?: readonly { id: number; weight: number }[]; // ETF 구성 종목과 비중
 }
+
+const eq = (...ids: number[]): { id: number; weight: number }[] => ids.map((id) => ({ id, weight: 1 }));
 
 export const STOCKS: readonly StockDef[] = [
   { id: 1, code: "S01", name: "양호재의 초울트라 레전드 양호재급 돈까스", kind: "stock", profile: "stable", basePrice: 50_000 },
@@ -30,7 +33,25 @@ export const STOCKS: readonly StockDef[] = [
   { id: 104, code: "C04", name: "조현수의 롯데리아 돈가스 코인", kind: "coin", profile: "coin", basePrice: 3_000 },
   { id: 105, code: "C05", name: "김릉환의 해병 돈가스 코인", kind: "coin", profile: "coin", basePrice: 20_000 },
   { id: 106, code: "C06", name: "조현수의 예비 6767번 돈가스 코인", kind: "coin", profile: "coin", basePrice: 6_767 },
+  // ETF: 구성 종목의 (현재가 ÷ 기준가)를 비중대로 평균해 ETF 시작가에 곱한 값. 자체 난수가 없고 구성 종목이 움직이는 대로 따라간다.
+  { id: 201, code: "E01", name: "돈까스 종합 ETF", kind: "etf", profile: "stable", basePrice: 50_000, components: eq(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14) },
+  { id: 202, code: "E02", name: "안정형 돈까스 ETF", kind: "etf", profile: "stable", basePrice: 50_000, components: eq(1, 2, 3, 11) },
+  { id: 203, code: "E03", name: "고변동 돈까스 ETF", kind: "etf", profile: "stable", basePrice: 30_000, components: eq(8, 9, 10, 14) },
+  { id: 204, code: "E04", name: "돈까스 코인 ETF", kind: "etf", profile: "stable", basePrice: 10_000, components: eq(101, 102, 103, 104, 105, 106) },
 ];
+
+/** ETF 가격: 구성 종목의 (현재가 ÷ 기준가)를 비중대로 평균해 ETF 시작가에 곱한다. 정수(원), 하한가 적용. */
+export function etfPrice(def: StockDef, priceOf: (id: number) => number): number {
+  const comps = def.components;
+  if (!comps || comps.length === 0) throw new Error(`not an etf: ${def.id}`);
+  let sum = 0;
+  let weights = 0;
+  for (const c of comps) {
+    sum += (c.weight * priceOf(c.id)) / getStock(c.id).basePrice;
+    weights += c.weight;
+  }
+  return Math.max(RULES.PRICE_FLOOR, Math.round((def.basePrice * sum) / weights));
+}
 
 export function getStock(id: number): StockDef {
   const s = STOCKS.find((x) => x.id === id);

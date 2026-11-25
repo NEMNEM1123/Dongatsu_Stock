@@ -9,13 +9,13 @@ import { toast } from "./toast";
 
 /** 상단 바: 로고 · 탭 · 접속자 · 내 순자산 */
 export function createTopbar(onLogout: () => void): { el: HTMLElement; tick: () => void; setOnline: (n: number) => void } {
-  const tabs: [string, string][] = [["stock", "거래소"], ["coin", "코인"], ["lottery", "복권"], ["puzzle", "퍼즐"], ["job", "알바"], ["rank", "순위"], ["help", "사용법"], ["more", "더보기"]];
+  const tabs: [string, string][] = [["stock", "거래소"], ["coin", "코인"], ["etf", "ETF"], ["lottery", "복권"], ["puzzle", "퍼즐"], ["job", "알바"], ["rank", "순위"], ["help", "사용법"], ["more", "더보기"]];
   const tabEls = new Map<string, HTMLElement>();
   const nav = el("nav", { class: "nav" });
   for (const [key, label] of tabs) {
     const b = el("button", { class: "nav-tab", type: "button" }, label);
     b.onclick = () => {
-      if (key === "stock" || key === "coin") {
+      if (key === "stock" || key === "coin" || key === "etf") {
         store.setView("trade");
         store.setMarket(key);
       } else if (key === "rank") store.setView("rank");

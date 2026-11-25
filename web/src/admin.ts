@@ -98,7 +98,7 @@ export function createMoreView(opts: { onLogout: () => void; openGuide: () => vo
 
   // ── 이벤트·뉴스 ──
   const evStock = el("select", { class: "input" });
-  for (const s of STOCKS) evStock.appendChild(el("option", { value: String(s.id) }, `${s.name} (${s.code})`));
+  for (const s of STOCKS.filter((x) => x.kind !== "etf")) evStock.appendChild(el("option", { value: String(s.id) }, `${s.name} (${s.code})`));
   const evStart = el("input", { class: "input num", type: "number", min: "1", value: "5" });
   const evDur = el("input", { class: "input num", type: "number", min: "1", max: "720", value: "30" });
   const evPct = el("input", { class: "input num", type: "number", step: "1", value: "15" });

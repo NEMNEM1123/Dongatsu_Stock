@@ -35,7 +35,7 @@ class Store {
   user: UserInfo | null = null;
   conn: Connection | null = null;
   stock = STOCKS[0].id;
-  market: "stock" | "coin" = "stock";
+  market: "stock" | "coin" | "etf" = "stock";
   view: View = "trade";
   helpTab: HelpTab = "guide";
   account: Account = { cash: 0, positions: [], bailoutLeft: 0, stars: 0, lotteryLeft: 0 };
@@ -97,7 +97,7 @@ class Store {
     this.setView("help");
   }
 
-  setMarket(m: "stock" | "coin"): void {
+  setMarket(m: "stock" | "coin" | "etf"): void {
     if (m === this.market) return;
     this.market = m;
     this.emit("market");

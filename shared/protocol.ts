@@ -172,7 +172,7 @@ export type ServerMsg =
       serverNow: number;
       online: number;
       user: UserInfo;
-      px: { tick: number; p: number[] }; // 현재 tick의 종목별 가격 (STOCKS 순서)
+      px: { tick: number; p: number[]; ids?: number[] }; // 현재 tick의 종목별 가격. ids는 p의 각 값이 어느 종목인지 (이후 px 메시지도 같은 순서)
       days: DayInit[]; // 종목별 오늘 시가·고가·저가·거래량 (현재 tick까지)
       news: NewsItem[]; // 최근에 시작된 뉴스
       maintenance: MaintenanceInfo;
