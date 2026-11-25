@@ -17,7 +17,7 @@ export interface NewsStrip {
  * 종목 정보 바 아래의 뉴스 띠. 열람권이 없으면 구매 버튼만 보이고, 있으면 뉴스가 오른쪽에서 왼쪽으로 흘러간다.
  * 구매는 순자산의 일부를 내는 큰 지출이라 버튼을 두 번 눌러야 한다.
  */
-export function createNewsStrip(opts: { onBuy: () => void; cost: () => number }): NewsStrip {
+export function createNewsStrip(opts: { onBuy: () => void; onTimeout: () => void; cost: () => number }): NewsStrip {
   let items: NewsItem[] = [];
   let until = 0;
   let armed = 0; // 첫 번째 클릭 시각 (두 번째 클릭 대기 중이면 0이 아님)
@@ -44,6 +44,13 @@ export function createNewsStrip(opts: { onBuy: () => void; cost: () => number })
     waiting = true;
     renderButton();
     opts.onBuy();
+    // 서버가 응답하지 않으면 버튼이 잠긴 채 남지 않게 한다
+    window.setTimeout(() => {
+      if (!waiting) return;
+      waiting = false;
+      renderButton();
+      opts.onTimeout();
+    }, 8000);
   };
 
   function render(): void {

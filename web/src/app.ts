@@ -146,6 +146,7 @@ export function mountApp(root: HTMLElement, user: UserInfo, onLogout: () => void
   const helpWrap = el("main", { class: "rank-wrap help-wrap", hidden: true }, help.el);
   const news = createNewsStrip({
     onBuy: () => conn.send({ t: "newsPass" }),
+    onTimeout: () => toast("서버 응답이 없습니다. 구매되지 않았어요. 잠시 후 다시 시도하거나 새로고침해 주세요.", "warn", 6000),
     cost: () => Math.max(0, Math.floor(netWorth(store.account.cash, store.account.positions, (id) => book.priceNow(id)) * RULES.NEWS_PASS_RATE)),
   });
 
