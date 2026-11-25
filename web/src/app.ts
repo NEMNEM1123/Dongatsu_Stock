@@ -288,10 +288,14 @@ export function mountApp(root: HTMLElement, user: UserInfo, onLogout: () => void
     switch (m.t) {
       case "hello":
         // 새 버전이 배포되어 재접속한 경우: 화면도 새 버전으로 바꾼다. 같은 버전으로는 한 번만 시도해서 새로고침이 반복되지 않게 한다.
-        if (m.appVersion !== APP_VERSION && sessionStorage.getItem("reloadedFor") !== m.appVersion) {
-          sessionStorage.setItem("reloadedFor", m.appVersion);
-          location.reload();
-          return;
+        // 서버가 버전을 보내지 않는 옛 서버이거나 저장소를 쓸 수 없으면 새로고침하지 않는다.
+        if (typeof m.appVersion === "string" && m.appVersion !== APP_VERSION) {
+          let tried = true;
+          try {
+            tried = sessionStorage.getItem("reloadedFor") === m.appVersion;
+            if (!tried) sessionStorage.setItem("reloadedFor", m.appVersion);
+          } catch { tried = true; /* 저장소를 못 쓰면 반복을 막을 수 없으므로 시도하지 않는다 */ }
+          if (!tried) { location.reload(); return; }
         }
         store.online = m.online;
         topbar.setOnline(m.online);
