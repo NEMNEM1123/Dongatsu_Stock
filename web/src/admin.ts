@@ -1,6 +1,6 @@
 import { previewMultipliers } from "../../shared/events";
 import { STOCKS } from "../../shared/stocks";
-import { CLIENT_VERSION } from "../../shared/version";
+import { APP_VERSION, CLIENT_VERSION } from "../../shared/version";
 import { adminCall } from "./api";
 import { el } from "./dom";
 import { bigWon, pct, timeText, won } from "./format";
@@ -47,7 +47,7 @@ export function createMoreView(opts: { onLogout: () => void; openGuide: () => vo
   const isAdmin = store.user?.role === "admin";
   let timer: number | undefined;
 
-  const me = card("내 정보", el("div", { class: "muted" }, `닉네임 ${store.user?.nickname ?? ""}${isAdmin ? " · 관리자" : ""}`), el("div", { class: "muted" }, `클라이언트 버전 ${CLIENT_VERSION}`));
+  const me = card("내 정보", el("div", { class: "muted" }, `닉네임 ${store.user?.nickname ?? ""}${isAdmin ? " · 관리자" : ""}`), el("div", { class: "muted" }, `앱 버전 ${APP_VERSION} (호환 번호 ${CLIENT_VERSION})`));
   const menuBtn = (label: string, run: () => void, cls: string): HTMLElement => {
     const b = el("button", { class: `btn ${cls}`, type: "button" }, label);
     b.onclick = run;
