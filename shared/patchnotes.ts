@@ -14,6 +14,16 @@ export const PATCH_TAG_LABEL: Record<PatchTag, string> = { new: "새 기능", fi
 
 export const PATCH_NOTES: readonly PatchEntry[] = [
   {
+    id: "2026-11-25.7",
+    date: "2026-11-25",
+    title: "v1.4.0 · 자동 이벤트",
+    items: [
+      { tag: "change", text: "이벤트가 운영자가 만드는 방식에서 자동으로 무작위 발생하는 방식으로 바뀌었어요. 접속자가 있는 동안 평균 3분에 한 번쯤 뉴스가 떠요." },
+      { tag: "change", text: "이벤트가 가격에 영향을 주는 시간은 1~2분으로 짧고, 변동은 ±1.5~5% 정도예요. 뉴스를 보고 따라 사는 단타로 얻을 수 있는 폭이 작아요." },
+      { tag: "new", text: "주식과 코인마다 다른 문구의 호재·악재 뉴스가 나와요. 같은 종목에 이벤트가 겹치지 않아요." },
+    ],
+  },
+  {
     id: "2026-11-25.6",
     date: "2026-11-25",
     title: "v1.3.0 · ETF · 종목 가격 표시 오류 수정",

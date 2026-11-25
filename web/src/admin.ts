@@ -1,4 +1,3 @@
-import { previewMultipliers } from "../../shared/events";
 import { STOCKS } from "../../shared/stocks";
 import { APP_VERSION, CLIENT_VERSION } from "../../shared/version";
 import { adminCall } from "./api";
@@ -96,64 +95,12 @@ export function createMoreView(opts: { onLogout: () => void; openGuide: () => vo
   const flagsEl = el("div", { class: "muted admin-flags" });
   const statusCard = card("현황 (10초마다 갱신)", tiles, flagsEl);
 
-  // ── 이벤트·뉴스 ──
-  const evStock = el("select", { class: "input" });
-  for (const s of STOCKS.filter((x) => x.kind !== "etf")) evStock.appendChild(el("option", { value: String(s.id) }, `${s.name} (${s.code})`));
-  const evStart = el("input", { class: "input num", type: "number", min: "1", value: "5" });
-  const evDur = el("input", { class: "input num", type: "number", min: "1", max: "720", value: "30" });
-  const evPct = el("input", { class: "input num", type: "number", step: "1", value: "15" });
-  const evHead = el("input", { class: "input", placeholder: "뉴스 문구 (2~80자)", maxLength: 80 });
-  const preview = el("div", { class: "ev-preview" });
+  // ── 이벤트·뉴스 (자동 발생: 기록만 본다) ──
   const evTable = el("tbody");
-  const evSubmit = el("button", { class: "btn btn-primary", type: "button" }, "이벤트 등록");
-
-  function drawPreview(): void {
-    const dur = Math.min(720, Math.max(1, Number(evDur.value) || 1));
-    const total = Number(evPct.value) || 0;
-    const stock = Number(evStock.value);
-    const base = book.ready ? book.priceNow(stock) : 0;
-    const m = previewMultipliers(total || 0.0001, dur);
-    const w = 360, h = 90, pad = 6;
-    const lo = Math.min(...m), hi = Math.max(...m);
-    const span = hi - lo || 1;
-    const pts = m.map((v, i) => `${(pad + (i / Math.max(1, m.length - 1)) * (w - 2 * pad)).toFixed(1)},${(h - pad - ((v - lo) / span) * (h - 2 * pad)).toFixed(1)}`).join(" ");
-    const color = total >= 0 ? "var(--up)" : "var(--down)";
-    preview.innerHTML = "";
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
-    svg.setAttribute("width", String(w));
-    svg.setAttribute("height", String(h));
-    const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-    line.setAttribute("points", pts);
-    line.setAttribute("fill", "none");
-    line.setAttribute("stroke", color);
-    line.setAttribute("stroke-width", "2");
-    svg.appendChild(line);
-    preview.appendChild(svg);
-    const end = base ? ` → ${won(base * (1 + total / 100))}원 (현재가 ${won(base)}원 기준)` : "";
-    preview.appendChild(el("div", { class: "muted ev-note" }, `기대 경로(변동성 제외): ${dur}분 동안 ${total >= 0 ? "+" : ""}${total}%${end}. 실제 가격은 평소 변동이 섞여 달라집니다.`));
-  }
-  for (const i of [evStock, evDur, evPct]) i.oninput = drawPreview;
-  evSubmit.onclick = async () => {
-    const r = await adminCall<{ id: number }>("POST", "/api/admin/event", {
-      stock: Number(evStock.value), startInMin: Number(evStart.value), durationMin: Number(evDur.value), totalPct: Number(evPct.value), headline: evHead.value,
-    });
-    if (!r.ok) return toast(r.message, "warn");
-    toast("이벤트를 등록했습니다. 시작 시점에 뉴스와 함께 적용됩니다.", "up");
-    evHead.value = "";
-    refresh();
-  };
   const eventCard = card(
-    "이벤트·뉴스",
-    row(el("span", { class: "muted" }, "종목"), evStock),
-    row(el("span", { class: "muted" }, "시작 (분 뒤)"), evStart),
-    row(el("span", { class: "muted" }, "지속 (분)"), evDur),
-    row(el("span", { class: "muted" }, "변동률 (%)"), evPct),
-    row(el("span", { class: "muted" }, "뉴스 문구"), evHead),
-    preview,
-    evSubmit,
-    el("div", { class: "muted ev-note" }, "시작 시점이 지나기 전까지는 유저에게 공개되지 않으며, 시작 후에는 삭제할 수 없습니다 (과거 가격 불변)."),
-    el("table", { class: "grid" }, el("thead", {}, el("tr", {}, ...["시작", "종목", "분", "변동", "문구", "상태", ""].map((h) => el("th", {}, h)))), evTable),
+    "이벤트·뉴스 (자동 발생)",
+    el("div", { class: "muted ev-note" }, "이벤트는 서버가 접속자가 있는 동안 무작위로 만듭니다. 운영자가 등록하거나 삭제할 수 없고, 아래는 최근 기록입니다."),
+    el("table", { class: "grid" }, el("thead", {}, el("tr", {}, ...["시작", "종목", "초", "변동", "문구", "상태"].map((h) => el("th", {}, h)))), evTable),
   );
 
   // ── 점검·버전 ──
@@ -263,24 +210,18 @@ export function createMoreView(opts: { onLogout: () => void; openGuide: () => vo
       ...o.flags.map((f) => el("span", { class: "warn-text" }, `${f.nick} (${pct(f.rate)}, ${bigWon(f.nw)}원) `)),
     );
     evTable.replaceChildren(
-      ...o.events.map((e) => {
-        const del = e.state === "scheduled" ? confirmButton("삭제", async () => {
-          const rr = await adminCall("POST", "/api/admin/event/delete", { id: e.id });
-          toast(rr.ok ? "삭제했습니다." : rr.message, rr.ok ? "up" : "warn");
-          refresh();
-        }) : el("span", {});
-        return el(
+      ...o.events.map((e) =>
+        el(
           "tr",
           {},
           el("td", { class: "num muted" }, `${new Date(e.startAt + 9 * 3600e3).toISOString().slice(5, 10)} ${timeText(e.startAt)}`),
           el("td", {}, stockName(e.stock)),
-          el("td", { class: "num" }, String(e.durationMin)),
+          el("td", { class: "num" }, String(Math.round((e.endAt - e.startAt) / 1000))),
           el("td", { class: `num ${e.totalPct >= 0 ? "up" : "down"}` }, `${e.totalPct >= 0 ? "+" : ""}${e.totalPct}%`),
           el("td", {}, e.headline),
           el("td", { class: e.state === "active" ? "warn-text" : "muted" }, { scheduled: "예정", active: "진행 중", done: "종료" }[e.state]),
-          el("td", {}, del),
-        );
-      }),
+        ),
+      ),
     );
     if (!loaded) {
       loaded = true;
@@ -306,7 +247,6 @@ export function createMoreView(opts: { onLogout: () => void; openGuide: () => vo
     el: root,
     show: () => {
       if (!isAdmin) return;
-      drawPreview();
       refresh();
       searchUsers();
       clearInterval(timer);

@@ -1,7 +1,8 @@
-// 관리자 이벤트: 특정 종목에 일정 시간 동안 추세(드리프트)를 더한다. 서버에서만 적용된다.
+// 이벤트: 특정 종목에 일정 시간 동안 추세(드리프트)를 더한다. 서버가 무작위로 만들고, 서버에서만 가격에 적용된다.
 
 import { RULES } from "./rules";
 import type { Effect } from "./engine";
+import type { StockDef } from "./stocks";
 
 export interface EventInput {
   stock: number;
@@ -55,4 +56,34 @@ export function validateEvent(e: EventInput, currentTick: number, stockExists: b
     return `적용 시점은 최대 ${Math.round(RULES.EVENT_MAX_AHEAD_MIN / 60 / 24)}일 이내여야 합니다.`;
   }
   return null;
+}
+
+// ── 자동 이벤트 ──
+
+const HEADLINES = {
+  stock: {
+    up: ["{n}, 깜짝 호재에 매수세 몰려", "{n}, 호실적 기대감에 상승세", "{n}, 대형 계약 소식에 강세", "{n}, 인기 급상승… 주문 폭주"],
+    down: ["{n}, 악재 소식에 매도세 확산", "{n}, 실적 우려에 하락세", "{n}, 오너 리스크 부각되며 약세", "{n}, 차익 실현 물량 쏟아져"],
+  },
+  coin: {
+    up: ["{n}, 고래 매수 포착… 급등", "{n}, 거래소 상장 기대감에 상승", "{n}, 커뮤니티 열기에 강세"],
+    down: ["{n}, 대량 매도 포착… 급락", "{n}, 규제 우려에 약세", "{n}, 투심 위축되며 하락"],
+  },
+} as const;
+
+/** tick마다 이벤트를 만들 확률. 평균 AUTO_EVENT_MEAN_SEC마다 한 건 */
+export const autoEventChance = (tickMs: number = RULES.TICK_MS): number => tickMs / (RULES.AUTO_EVENT_MEAN_SEC * 1000);
+
+/**
+ * 무작위 이벤트 한 건을 만든다. rnd는 [0,1) 난수 함수(서버는 암호학적 난수를 넣는다).
+ * 시작 tick은 호출한 쪽이 정한다 (항상 현재보다 미래여야 한다).
+ */
+export function makeAutoEvent(rnd: () => number, stock: StockDef, startTick: number): EventInput {
+  const up = rnd() < 0.5;
+  const pct = Math.round((RULES.AUTO_EVENT_MIN_PCT + rnd() * (RULES.AUTO_EVENT_MAX_PCT - RULES.AUTO_EVENT_MIN_PCT)) * 10) / 10;
+  const steps = Math.round((RULES.AUTO_EVENT_MAX_SEC - RULES.AUTO_EVENT_MIN_SEC) / 10);
+  const sec = RULES.AUTO_EVENT_MIN_SEC + 10 * Math.floor(rnd() * (steps + 1));
+  const pool = HEADLINES[stock.kind === "coin" ? "coin" : "stock"][up ? "up" : "down"];
+  const headline = pool[Math.floor(rnd() * pool.length)]!.replace("{n}", stock.name);
+  return { stock: stock.id, startTick, durationMin: sec / 60, totalPct: up ? pct : -pct, headline };
 }

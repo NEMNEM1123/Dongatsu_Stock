@@ -9,6 +9,13 @@ export const RULES = {
   EVENT_MAX_DURATION_MIN: 720, // 이벤트 최대 지속 시간(분)
   EVENT_MIN_LEAD_TICKS: 2, // 이벤트 시작은 현재 tick보다 최소 이만큼 뒤여야 한다 (과거 가격 불변)
   EVENT_MAX_AHEAD_MIN: 7 * 24 * 60, // 이벤트를 미리 등록할 수 있는 최대 기간(분)
+  // 자동 이벤트: 서버가 접속자가 있는 동안 무작위로 만든다. 효과 시간을 짧게 하고 변동률을 작게 해서 뉴스를 보고 따라 사는 단타의 이득을 줄인다.
+  AUTO_EVENT_MEAN_SEC: 180, // 평균 이만큼의 간격으로 한 건씩 (접속자가 있는 동안만)
+  AUTO_EVENT_MIN_PCT: 1.5, // 한 건의 변동률 범위(±%)
+  AUTO_EVENT_MAX_PCT: 5,
+  AUTO_EVENT_MIN_SEC: 60, // 가격이 움직이는 시간 범위(초, 10초 단위)
+  AUTO_EVENT_MAX_SEC: 120,
+  AUTO_EVENT_MAX_ACTIVE: 3, // 동시에 진행·예정인 이벤트 수 상한
   ABNORMAL_RATE: 5, // 수익률이 시작 자금의 이 배수(+500%)를 넘으면 관리자 화면에 표시 (조치는 관리자가 판단)
   LB_TOP: 100, // 리더보드에 보여 주는 순위 수
   HOF_TOP: 20, // 명예의 전당에 보관하는 순위 수

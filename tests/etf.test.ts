@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { priceAt } from "../shared/engine";
+import { advance, type PriceState } from "../shared/engine";
 import { RULES } from "../shared/rules";
 import { etfPrice, getStock, STOCKS } from "../shared/stocks";
 
@@ -83,7 +83,11 @@ describe("ETF 가격", () => {
     const comps = e.components!.map((c) => getStock(c.id));
     const sample = 200;
     const ticks = Array.from({ length: sample }, (_, i) => Math.floor((i * N) / sample));
-    const comp = comps.map((s) => ticks.map((t) => priceAt(s, SEED, t)));
+    // 처음부터 다시 계산하지 않고 이전 시점에서 이어서 계산한다
+    const comp = comps.map((s) => {
+      let st: PriceState = { tick: 0, price: s.basePrice };
+      return ticks.map((t) => (st = advance(s, SEED, st, t, [])).price);
+    });
     const etf = ticks.map((_, i) => etfPrice(e, (id) => comp[comps.findIndex((s) => s.id === id)]![i]!));
     for (const p of etf) {
       expect(p).toBeGreaterThan(e.basePrice * 0.5);

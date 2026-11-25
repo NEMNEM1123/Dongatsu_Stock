@@ -19,7 +19,7 @@ import {
 import { cashOut, checkBet, isExpired, lose, newRun, nextStage, puzzleOf, remainMs, submit as submitPuzzle, type Outcome, type Run } from "../shared/puzzlerun";
 import { achievementViews, claimKey, missionViews, summarize, type LotterySummary, type TradeRow } from "../shared/records";
 import { firstTrigger, isClosing, parseReserve, type ReserveCond, type ReserveItem, type ReserveStatus } from "../shared/reserve";
-import { toEffect, validateEvent, type EventInput } from "../shared/events";
+import { autoEventChance, makeAutoEvent, toEffect, validateEvent } from "../shared/events";
 import { CLIENT_VERSION, MIN_CLIENT_VERSION } from "../shared/version";
 import {
   gainValues, liveValues, METRICS, peakUpdate, PERIODS, rankBy, startCapital, weekIdOf, weekLabel,
@@ -338,6 +338,7 @@ export class Market extends DurableObject<Env> {
       .toArray();
     this.lastNewsTick = px.tick;
     for (const r of rows) this.broadcast({ t: "news", item: this.newsItem(r) });
+    this.maybeSpawnEvent(px.tick);
 
     // 접속 중에는 매 tick 예약 주문을 검사한다 (접속하지 않은 동안은 체크포인트에서 지난 구간을 훑는다)
     if (this.hasPendingReserves()) {
@@ -346,6 +347,30 @@ export class Market extends DurableObject<Env> {
       this.ctx.storage.transactionSync(() => this.processReserves(paths, reserved));
       this.notifyReserves(reserved);
     }
+  }
+
+  /**
+   * 접속자가 있는 동안(tick이 도는 동안) 가끔 서버가 무작위 이벤트를 만든다.
+   * 시작 tick은 항상 현재보다 미래라서 과거 가격은 바뀌지 않고, 뉴스는 시작 tick에 나간다.
+   * 같은 종목에 이벤트가 겹치지 않게 하고, 동시에 진행되는 수에 상한을 둔다. ETF는 구성 종목에서 가격이 나오므로 제외한다.
+   */
+  private maybeSpawnEvent(curTick: number): void {
+    const rnd = (): number => randomBelow(1_000_000) / 1_000_000;
+    if (rnd() >= autoEventChance()) return;
+    const busy = this.sql.exec("SELECT stock_id FROM events WHERE end_tick > ?", curTick).toArray().map((r) => Number(r.stock_id));
+    if (busy.length >= RULES.AUTO_EVENT_MAX_ACTIVE) return;
+    const pool = STOCKS.filter((s) => s.kind !== "etf" && !busy.includes(s.id));
+    if (pool.length === 0) return;
+    const stock = pool[Math.floor(rnd() * pool.length)]!;
+    const input = makeAutoEvent(rnd, stock, curTick + RULES.EVENT_MIN_LEAD_TICKS);
+    const err = validateEvent(input, curTick, true);
+    if (err) { console.error("auto event rejected", err); return; }
+    const fx = toEffect(input);
+    this.sql.exec(
+      "INSERT INTO events (stock_id, start_tick, end_tick, drift_ppm, total_pct, headline, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      input.stock, fx.startTick, fx.endTick, fx.driftPpm, input.totalPct, input.headline, Date.now(), 0,
+    );
+    this.effectsMemo = null;
   }
 
   private newsItem(r: Record<string, SqlStorageValue>): NewsItem {
@@ -1204,43 +1229,9 @@ export class Market extends DurableObject<Env> {
 
     const b = req.method === "POST" ? await this.body(req) : {};
 
-    if (req.method === "POST" && p === "/api/admin/event") {
-      this.epochCache ??= Number(this.meta("epoch"));
-      const cur = this.currentTick();
-      const startTick =
-        typeof b.startAt === "number"
-          ? Math.ceil((b.startAt - this.epochCache) / RULES.TICK_MS)
-          : cur + Math.ceil((Number(b.startInMin) * 60_000) / RULES.TICK_MS);
-      const input: EventInput = {
-        stock: Number(b.stock),
-        startTick,
-        durationMin: Number(b.durationMin),
-        totalPct: Number(b.totalPct),
-        headline: typeof b.headline === "string" ? b.headline.trim() : "",
-      };
-      const err = validateEvent(input, cur, STOCKS.some((s) => s.id === input.stock && s.kind !== "etf"));
-      if (err) return fail(400, err);
-      const fx = toEffect(input);
-      const id = Number(
-        this.sql
-          .exec(
-            "INSERT INTO events (stock_id, start_tick, end_tick, drift_ppm, total_pct, headline, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
-            input.stock, fx.startTick, fx.endTick, fx.driftPpm, input.totalPct, input.headline, Date.now(), admin.id,
-          )
-          .one().id,
-      );
-      this.effectsMemo = null;
-      return json({ ok: true, id });
-    }
-
-    if (req.method === "POST" && p === "/api/admin/event/delete") {
-      const row = this.sql.exec("SELECT start_tick FROM events WHERE id = ?", Number(b.id)).toArray()[0];
-      if (!row) return fail(404, "없는 이벤트입니다.");
-      // 이미 시작된 이벤트는 가격에 반영되었으므로 지울 수 없다 (과거 가격 불변)
-      if (Number(row.start_tick) <= this.currentTick()) return fail(409, "이미 시작된 이벤트는 삭제할 수 없습니다.");
-      this.sql.exec("DELETE FROM events WHERE id = ?", Number(b.id));
-      this.effectsMemo = null;
-      return json({ ok: true });
+    // 이벤트는 서버가 자동으로 만든다 (maybeSpawnEvent). 운영자가 등록하거나 지울 수 없다.
+    if (req.method === "POST" && (p === "/api/admin/event" || p === "/api/admin/event/delete")) {
+      return fail(410, "이벤트는 자동으로 발생합니다. 운영자가 등록하거나 삭제할 수 없습니다.");
     }
 
     if (req.method === "POST" && p === "/api/admin/maintenance") {
