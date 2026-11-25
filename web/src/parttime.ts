@@ -36,6 +36,11 @@ export function createPartTimeView(): {
   let busyTimer: number | undefined;
   let deadlineAt = 0; // performance.now() 기준 표시용 마감
   let endAsked = false;
+  let sentAt = 0; // 마지막으로 요청을 보낸 시각 (응답 시간 표시용)
+  let lastRtt = 0;
+  const pendingFlips = new Set<number>(); // 보냈지만 아직 응답이 오지 않은 카드
+  let pendingTimer: number | undefined;
+  let lastFlipAt = 0;
 
   // 게임별 로컬 상태
   let gameKey = "";
@@ -70,6 +75,8 @@ export function createPartTimeView(): {
       return false;
     }
     busy = true;
+    sentAt = performance.now();
+    if (view?.phase !== "play") render(); // 누르자마자 '처리 중'이 보이게 한다 (근무 화면은 다시 그리지 않는다)
     busyTimer = window.setTimeout(() => {
       release();
       msg = "응답이 늦어요. 현재 상태를 다시 확인합니다.";
@@ -85,7 +92,7 @@ export function createPartTimeView(): {
   function jobCard(job: JobId): HTMLElement {
     const lv = levels();
     const secs = RULES.PT_JOBS[job].shiftSec === 0 ? "시간 제한 없음 (라운드마다 제한)" : `${shiftMs(job, lv) / 1000}초`;
-    const btn = el("button", { class: "btn btn-buy", type: "button", disabled: busy }, "근무 시작");
+    const btn = el("button", { class: "btn btn-buy", type: "button", disabled: busy }, busy ? "처리 중…" : "근무 시작");
     btn.onclick = () => { msg = ""; send({ t: "pt", act: "start", job }); };
     return el(
       "div",
@@ -99,7 +106,7 @@ export function createPartTimeView(): {
   function upgradeRow(u: (typeof RULES.PT_UPGRADES)[number]): HTMLElement {
     const lv = levelOf(levels(), u.id as UpgradeId);
     const cost = upgradeCost(u.id as UpgradeId, lv);
-    const btn = el("button", { class: "btn", type: "button" }, cost === null ? "최고 레벨" : `${won(cost)}원`);
+    const btn = el("button", { class: "btn", type: "button" }, busy ? "처리 중…" : cost === null ? "최고 레벨" : `${won(cost)}원`);
     btn.disabled = busy || cost === null || cost > store.account.cash;
     btn.onclick = () => { msg = ""; send({ t: "pt", act: "buy", id: u.id }); };
     return el(
@@ -130,6 +137,7 @@ export function createPartTimeView(): {
     body.replaceChildren(
       el("div", { class: "lot-info muted" }, "배팅 없이 일한 만큼 돈을 벌어요. 현금이 0원이어도 할 수 있고, 번 돈은 근무가 끝나면 바로 들어와요."),
       el("div", { class: "op-row" }, el("span", { class: "muted" }, "보유 현금"), el("span", { class: "num" }, `${won(store.account.cash)}원`)),
+      el("div", { class: "op-row" }, el("span", { class: "muted" }, "서버 응답 시간"), rttEl()),
       view?.end ? endSummary(view.end) : el("div", {}),
       msg ? el("div", { class: "warn-text" }, msg) : el("div", {}),
       el("div", { class: "pt-section" }, "알바 고르기"),
@@ -140,13 +148,16 @@ export function createPartTimeView(): {
     timerEl = fryFill = null;
   }
 
+  /** 서버 응답에 걸린 시간. 느릴 때 원인이 서버인지 통신인지 가리는 데 쓴다 */
+  const rttEl = (): HTMLElement => el("span", { class: `muted num pt-rtt${lastRtt > 800 ? " slow" : ""}` }, lastRtt ? `응답 ${lastRtt}ms` : "");
+
   // ── 근무 화면 공통 ──
   const run = () => view!.run!;
   const secText = (ms: number): string => `${Math.max(0, ms / 1000).toFixed(1)}초`;
 
   function head(extra: string): HTMLElement {
     timerEl = el("span", { class: "num pt-timer" });
-    return el("div", { class: "pt-head" }, el("b", {}, RULES.PT_JOBS[run().job].title), el("span", { class: "muted" }, extra), el("span", { class: "spacer" }), timerEl);
+    return el("div", { class: "pt-head" }, el("b", {}, RULES.PT_JOBS[run().job].title), el("span", { class: "muted" }, extra), el("span", { class: "spacer" }), rttEl(), timerEl);
   }
 
   function quit(label = "그만하기"): HTMLElement {
@@ -244,8 +255,9 @@ export function createPartTimeView(): {
     const grid = el("div", { class: "pt-cards" });
     m.cards.forEach((sym, i) => {
       const shown = sym >= 0 ? sym : peek.get(i) ?? -1;
-      const b = el("button", { class: `pt-card${shown >= 0 ? " up" : ""}${sym >= 0 && !peek.has(i) ? " keep" : ""}`, type: "button" }, shown >= 0 ? CARDS[shown]! : "?");
-      b.onclick = () => { if (shown < 0) send({ t: "pt", act: "flip", i }); };
+      const waiting = shown < 0 && pendingFlips.has(i);
+      const b = el("button", { class: `pt-card${shown >= 0 ? " up" : ""}${waiting ? " wait" : ""}`, type: "button" }, shown >= 0 ? CARDS[shown]! : waiting ? "…" : "?");
+      b.onclick = () => { if (shown < 0) flipTap(i); };
       grid.appendChild(b);
     });
     body.replaceChildren(
@@ -254,6 +266,33 @@ export function createPartTimeView(): {
       el("div", { class: "muted num" }, `지금까지 ${won(m.found * r.unit)}원`),
       el("div", { class: "pt-tools" }, quit("여기까지 하고 끝내기")),
     );
+  }
+
+  /**
+   * 카드를 누르면 응답을 기다리지 않고 바로 보낸다 (연달아 두 장을 눌러도 순서대로 처리된다).
+   * 서버가 정한 최소 간격만 지켜서 보낸다. 응답이 오면 카드가 열린다.
+   */
+  function flipTap(i: number): void {
+    if (pendingFlips.has(i) || busy) return;
+    pendingFlips.add(i);
+    const at = Math.max(performance.now(), lastFlipAt + RULES.PT_MATCH_MIN_FLIP_MS + 40);
+    lastFlipAt = at;
+    render();
+    window.setTimeout(() => {
+      if (!store.conn?.send({ t: "pt", act: "flip", i })) {
+        pendingFlips.delete(i);
+        msg = "서버와 연결 중입니다. 잠시 후 다시 눌러 주세요.";
+        render();
+        return;
+      }
+      if (!sentAt) sentAt = performance.now();
+      clearTimeout(pendingTimer);
+      pendingTimer = window.setTimeout(() => {
+        pendingFlips.clear();
+        store.conn?.send({ t: "pt", act: "state" });
+        render();
+      }, REPLY_TIMEOUT_MS);
+    }, Math.max(0, at - performance.now()));
   }
 
   // ── 튀기기 ──
@@ -358,6 +397,12 @@ export function createPartTimeView(): {
     reset: () => { release(); store.conn?.send({ t: "pt", act: "state" }); },
     onResult: (m) => {
       release();
+      if (sentAt) { lastRtt = Math.round(performance.now() - sentAt); sentAt = 0; }
+      // 응답이 온 카드는 더 이상 '기다리는 중'이 아니다. 오류면 모두 비우고 서버가 알려 준 상태를 따른다.
+      const fi = m.ok ? m.view.info : null;
+      if (fi?.kind === "flip") { pendingFlips.delete(fi.index); if (fi.other !== undefined) pendingFlips.delete(fi.other); }
+      else pendingFlips.clear();
+      if (pendingFlips.size === 0) clearTimeout(pendingTimer);
       if (m.ok) { msg = ""; applyView(m.view); } else { msg = m.error; if (m.view) applyView(m.view); }
       render();
     },
