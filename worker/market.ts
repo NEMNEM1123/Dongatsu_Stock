@@ -105,8 +105,10 @@ export class Market extends DurableObject<Env> {
     this.sql = ctx.storage.sql;
     ctx.blockConcurrencyWhile(async () => {
       this.migrate();
-      // 최초 실행일 때만 tick 0 체크포인트를 만든다. (깨어날 때마다 돌리면 쓰기가 낭비된다)
-      if (this.sql.exec("SELECT 1 FROM checkpoints LIMIT 1").toArray().length === 0) this.runCheckpoint();
+      // 체크포인트가 없는 종목이 있을 때만 만든다: 최초 실행, 그리고 새 종목을 추가한 배포 직후.
+      // (priceNow는 종목의 체크포인트가 있다고 가정한다. 깨어날 때마다 돌리면 쓰기가 낭비된다)
+      const have = Number(this.sql.exec("SELECT COUNT(DISTINCT stock_id) AS n FROM checkpoints WHERE stock_id IN (" + STOCKS.map((s) => s.id).join(",") + ")").one().n);
+      if (have < STOCKS.length) this.runCheckpoint();
       if ((await ctx.storage.getAlarm()) === null) await ctx.storage.setAlarm(this.nextAlarmAt());
       if (ctx.getWebSockets().length > 0) this.startTicker(); // 깨어났을 때 접속자가 있으면 가격 전송을 이어 간다
     });
@@ -172,7 +174,8 @@ export class Market extends DurableObject<Env> {
           tick = Number(row.tick);
           price = Number(row.price);
         } else {
-          tick = 0;
+          // 새로 상장하는 종목: 지금 tick에 시작가로 시작한다 (처음 실행할 때는 cur가 0이다)
+          tick = cur;
           price = stock.basePrice;
           feed(tick, price);
         }

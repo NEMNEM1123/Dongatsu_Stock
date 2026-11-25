@@ -14,6 +14,16 @@ export const PATCH_TAG_LABEL: Record<PatchTag, string> = { new: "새 기능", fi
 
 export const PATCH_NOTES: readonly PatchEntry[] = [
   {
+    id: "2026-11-25.5",
+    date: "2026-11-25",
+    title: "v1.2.1 · 새 종목 7개",
+    items: [
+      { tag: "new", text: "주식 4종목이 새로 상장했어요: 복동원의 쇠구슬 돈가스, 오현우의 게이 돈가스, 김릉환의 쿠팡 알바 돈가스, 이기열의 오도짜세 기열 돈가스." },
+      { tag: "new", text: "코인 3종목이 새로 상장했어요: 조현수의 롯데리아 돈가스 코인, 김릉환의 해병 돈가스 코인, 조현수의 예비 6767번 돈가스 코인." },
+      { tag: "change", text: "새 종목의 차트는 상장한 시점부터 시작해요. 이제 주식 14종목, 코인 6종목이에요." },
+    ],
+  },
+  {
     id: "2026-11-25.4",
     date: "2026-11-25",
     title: "v1.2.0 · 알바",
