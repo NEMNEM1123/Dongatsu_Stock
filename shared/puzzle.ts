@@ -2,6 +2,7 @@
 // 판 생성은 서버 전용(정답 분할을 알면 안 됨). 조각 모양 계산(rotate 등)은 화면에서도 쓴다.
 // 조각은 판을 먼저 여러 덩어리로 잘라서 만들기 때문에 항상 풀 수 있다.
 
+import { mulberry32, shuffle } from "./prng";
 import { RULES } from "./rules";
 
 export type Cell = readonly [row: number, col: number];
@@ -109,24 +110,6 @@ export function verifySolution(puzzle: Puzzle, placements: readonly Placement[])
 }
 
 // ---------- 생성 (서버 전용) ----------
-
-function mulberry32(seed: number): () => number {
-  let a = seed | 0;
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function shuffle<T>(arr: T[], rnd: () => number): T[] {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(rnd() * (i + 1));
-    [arr[i], arr[j]] = [arr[j]!, arr[i]!];
-  }
-  return arr;
-}
 
 /** size×size 판을 연결된 덩어리들로 자른다. 반환값은 덩어리별 칸 번호(행*size+열) */
 function partition(size: number, minPiece: number, maxPiece: number, rnd: () => number): number[][] {

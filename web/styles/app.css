@@ -395,3 +395,40 @@ table.grid tbody tr.liq-near { background: color-mix(in srgb, var(--warn, #e0a03
 @media (max-width: 900px) {
   .pz-mini { --pz-mini: 14px; }
 }
+
+/* ── 알바 ── */
+.pt-view { flex: 1; min-width: 0; max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; overflow: auto; }
+.pt-body { padding: 14px; display: flex; flex-direction: column; gap: 12px; word-break: keep-all; }
+.pt-section { margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--line); font-weight: 700; }
+.pt-job, .pt-up { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 10px 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); }
+.pt-job { flex-direction: column; align-items: stretch; }
+.pt-job-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.pt-desc { font-size: 12px; line-height: 1.5; }
+.pt-result { padding: 12px; border: 1px solid var(--accent); border-radius: var(--radius); display: flex; flex-direction: column; gap: 4px; }
+.pt-result-title { font-weight: 700; }
+.pt-pay { font-size: 22px; font-weight: 700; }
+.pt-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.pt-timer { font-size: 18px; font-weight: 700; color: var(--accent); }
+.pt-tools { display: flex; gap: 6px; }
+.pt-calc { display: flex; flex-direction: column; gap: 10px; align-items: center; padding: 14px 0; }
+.pt-q { font-size: 36px; font-weight: 700; }
+.pt-input { width: 180px; font-size: 24px; height: 48px; }
+.pt-mem-show { min-height: 120px; display: flex; align-items: center; justify-content: center; }
+.pt-mem-item { padding: 22px 40px; border-radius: var(--radius); font-size: 28px; font-weight: 700; color: #fff; }
+.pt-mem-item.gap { background: transparent; }
+.pt-dots { text-align: center; }
+.pt-keys { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.pt-keys.off { opacity: 0.4; pointer-events: none; }
+.pt-key { height: 64px; border: 1px solid var(--line); border-radius: var(--radius); color: #fff; font-size: 18px; font-weight: 700; cursor: pointer; }
+.pt-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; width: min(100%, 420px); margin: 0 auto; }
+.pt-card { aspect-ratio: 1; font-size: 34px; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; color: var(--text-3); }
+.pt-card.up { color: var(--text); border-color: var(--accent); }
+.pt-pan { font-size: 64px; text-align: center; }
+.pt-gauge { position: relative; height: 18px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+.pt-gauge > i { display: block; height: 100%; width: 0; background: var(--text-3); }
+.pt-gauge > i.good { background: var(--accent); }
+.pt-gauge > i.perfect { background: var(--up); }
+.pt-gauge > i.burnt { background: #6b3b1e; }
+.pt-mark { position: absolute; right: 0; top: 0; bottom: 0; width: 3px; background: var(--text); opacity: 0.6; }
+.pt-pull { height: 72px; font-size: 22px; touch-action: manipulation; }
+.pt-badge { min-height: 24px; text-align: center; font-weight: 700; }

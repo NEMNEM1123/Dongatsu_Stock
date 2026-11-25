@@ -7,6 +7,8 @@ import type { AchievementView, MissionView, MyStats } from "./records";
 import type { ReserveCond, ReserveItem } from "./reserve";
 import type { Placement, Puzzle } from "./puzzle";
 import type { Outcome } from "./puzzlerun";
+import type { JobId } from "./parttime";
+import type { PtEnd, PtInfo, PtViewData } from "./ptrun";
 
 export interface Checkpoint {
   stock: number;
@@ -108,6 +110,15 @@ export interface PuzzleView {
   outcome: Outcome | null; // over일 때
 }
 
+/** 알바 화면이 그릴 현재 모습. 계산 정답이나 카드 뒷면 같은 비밀은 들어 있지 않다. */
+export interface PtView {
+  phase: "idle" | "play" | "over";
+  levels: Record<string, number>; // 업그레이드 레벨
+  run: PtViewData | null; // play일 때만
+  end: PtEnd | null; // over일 때만
+  info: PtInfo | null; // 이번 요청의 부가 결과 (튀김 등급, 카드 내용 등)
+}
+
 export interface UserInfo {
   id: number;
   nickname: string;
@@ -131,6 +142,13 @@ export type ClientMsg =
   | { t: "lb"; period: Period; metric: Metric }
   | { t: "hof" }
   | { t: "lottery"; count: number }
+  | { t: "pt"; act: "state" | "end" }
+  | { t: "pt"; act: "start"; job: JobId }
+  | { t: "pt"; act: "submit"; answers: (number | null)[] }
+  | { t: "pt"; act: "mem"; input: number[] }
+  | { t: "pt"; act: "flip"; i: number }
+  | { t: "pt"; act: "pull"; ms: number }
+  | { t: "pt"; act: "buy"; id: string }
   | { t: "puzzle"; act: "state" | "next" | "cash" }
   | { t: "puzzle"; act: "start"; bet: number }
   | { t: "puzzle"; act: "submit"; placements: Placement[] }
@@ -173,6 +191,8 @@ export type ServerMsg =
   | { t: "account"; cash: number; positions: PositionInfo[]; bailoutLeft: number; stars: number; lotteryLeft: number }
   | { t: "lottery"; ok: true; payouts: number[]; cost: number; payout: number; left: number }
   | { t: "lottery"; ok: false; error: string }
+  | { t: "pt"; ok: true; view: PtView }
+  | { t: "pt"; ok: false; error: string; view?: PtView }
   | { t: "puzzle"; ok: true; view: PuzzleView }
   | { t: "puzzle"; ok: false; error: string; view?: PuzzleView } // view가 있으면 판은 그대로 이어진다
   | { t: "prestige"; ok: boolean; error?: string; stars?: number; cash?: number }

@@ -35,7 +35,7 @@ export const RULES = {
 
   // 파산 구제
   BAILOUT_AMOUNT: 1_000_000,
-  BAILOUT_PER_DAY: 1,
+  BAILOUT_PER_DAY: 3,
 
   // 복권
   LOTTERY_PRICE: 10_000,
@@ -70,6 +70,39 @@ export const RULES = {
     { size: 9, minPiece: 4, maxPiece: 6, seconds: 120 },
     { size: 10, minPiece: 4, maxPiece: 7, seconds: 150 },
   ],
+
+  // 알바: 배팅 없이 일한 만큼 번다 (현금이 0원이어도 가능). 하루 한도는 없고, 수입은 근무 시간 안에서 할 수 있는 만큼으로 제한된다.
+  // unit: 한 번 잘했을 때의 기본 수입(원) / shiftSec: 근무 시간(초, 0이면 시간 제한 없이 단계별 진행)
+  PT_JOBS: {
+    calc: { title: "계산 알바", unit: 300, shiftSec: 40 }, // 정답 하나당 unit, 오답 하나당 -unit/2
+    memory: { title: "순서 기억 알바", unit: 800, shiftSec: 0 }, // 라운드 r을 성공하면 unit×r
+    match: { title: "짝 맞추기 알바", unit: 1000, shiftSec: 60 }, // 맞춘 짝 하나당 unit (모두 맞추면 남은 시간만큼 보너스)
+    fry: { title: "돈까스 튀기기", unit: 700, shiftSec: 45 }, // 완벽하게 꺼내면 unit, 괜찮으면 unit/2
+  },
+  PT_CALC_MIN_ANSWER_MS: 600, // 사람이 계산 문제 하나에 쓸 수 있는 최소 시간. 이보다 빠른 제출은 무효
+  PT_MEMORY_MAX_ROUND: 12,
+  PT_MEMORY_MENU: 4, // 메뉴 종류 수
+  PT_MEMORY_SHOW_MS: 700, // 메뉴 하나를 보여 주는 시간
+  PT_MATCH_PAIRS: 8, // 4×4 카드
+  PT_MATCH_MIN_FLIP_MS: 200, // 카드를 뒤집는 최소 간격
+  PT_MATCH_TIME_BONUS: 0.5, // 모두 맞췄을 때 남은 시간 비율 × 이 값 만큼 보너스
+  PT_FRY_READY_MIN_MS: 2000, // 튀김이 완성되는 시각의 범위
+  PT_FRY_READY_MAX_MS: 3500,
+  PT_FRY_PERFECT_MS: 250, // 완성 시각과의 차이가 이 안이면 완벽
+  PT_FRY_GOOD_MS: 600, // 이 안이면 괜찮음, 넘으면 실패
+  PT_FRY_MAX_LAG_MS: 800, // 서버가 잰 시간보다 화면이 잰 시간이 이만큼 이상 짧으면 무효 (네트워크 지연 허용 한도)
+  // 영구 업그레이드: 현금으로 사고, 레벨이 오를수록 비싸진다. 비용 = round(cost × growth^현재레벨, 백 원 단위)
+  PT_UPGRADES: [
+    { id: "wage", title: "시급 인상", desc: "모든 알바 수입 +10%", max: 20, cost: 30_000, growth: 1.35 },
+    { id: "time", title: "근무 시간 연장", desc: "근무 시간 +3초 (순서 기억 제외)", max: 10, cost: 50_000, growth: 1.4 },
+    { id: "calc", title: "전자계산기", desc: "계산 알바 수입 +15%", max: 10, cost: 40_000, growth: 1.4 },
+    { id: "memory", title: "메모장", desc: "순서 기억 알바 수입 +15%", max: 10, cost: 40_000, growth: 1.4 },
+    { id: "match", title: "카드 정리함", desc: "짝 맞추기 알바 수입 +15%", max: 10, cost: 40_000, growth: 1.4 },
+    { id: "fry", title: "고급 튀김기", desc: "돈까스 튀기기 수입 +15%", max: 10, cost: 40_000, growth: 1.4 },
+  ],
+  PT_WAGE_PER_LEVEL: 0.1,
+  PT_TIME_PER_LEVEL_SEC: 3,
+  PT_JOB_PER_LEVEL: 0.15,
 
   // 프레스티지
   PRESTIGE_NET_WORTH: 1_000_000_000,

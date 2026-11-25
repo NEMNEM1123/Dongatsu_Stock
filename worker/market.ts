@@ -10,6 +10,12 @@ import {
 import { KST_MS } from "../shared/candles";
 import { LOTTERY_TOTAL_WEIGHT, prizeForRoll } from "../shared/lottery";
 import { payoutFor } from "../shared/puzzle";
+import { JOB_IDS, levelOf, memorySeq, upgradeCost, upgradeDef, type Levels } from "../shared/parttime";
+import {
+  finishEarly as ptFinishEarly, flip as ptFlip, isExpired as isPtExpired, pull as ptPull, settle as ptSettle,
+  startRun as startPtRun, submitCalc as ptSubmitCalc, submitMemory as ptSubmitMemory, viewData as ptViewData,
+  type PtEnd, type PtInfo, type PtRun, type PtStep,
+} from "../shared/ptrun";
 import { cashOut, checkBet, isExpired, lose, newRun, nextStage, puzzleOf, remainMs, submit as submitPuzzle, type Outcome, type Run } from "../shared/puzzlerun";
 import { achievementViews, claimKey, missionViews, summarize, type LotterySummary, type TradeRow } from "../shared/records";
 import { firstTrigger, isClosing, parseReserve, type ReserveCond, type ReserveItem, type ReserveStatus } from "../shared/reserve";
@@ -19,7 +25,7 @@ import {
   gainValues, liveValues, METRICS, peakUpdate, PERIODS, rankBy, startCapital, weekIdOf, weekLabel,
   type Baseline, type Metric, type UserSnap, type Values,
 } from "../shared/leaderboard";
-import type { DayInit, Fill, FeedItem, HofGroup, LbEntry, MaintenanceInfo, NewsItem, OrderAction, PositionInfo, PuzzleView, TradeRecord } from "../shared/protocol";
+import type { DayInit, Fill, FeedItem, HofGroup, LbEntry, MaintenanceInfo, NewsItem, OrderAction, PositionInfo, PtView, PuzzleView, TradeRecord } from "../shared/protocol";
 import { getStock, STOCKS } from "../shared/stocks";
 import {
   fromHex,
@@ -564,6 +570,30 @@ export class Market extends DurableObject<Env> {
         CREATE INDEX puzzle_log_user ON puzzle_log (user_id, id);
       `);
       v = 9;
+    }
+
+    if (v < 10) {
+      this.sql.exec(`
+        CREATE TABLE pt_upgrades (
+          user_id INTEGER NOT NULL,
+          id TEXT NOT NULL,
+          level INTEGER NOT NULL,
+          PRIMARY KEY (user_id, id)
+        ) WITHOUT ROWID;
+        CREATE TABLE pt_runs (
+          user_id INTEGER PRIMARY KEY,
+          run TEXT NOT NULL
+        );
+        CREATE TABLE pt_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          ts INTEGER NOT NULL,
+          job TEXT NOT NULL,
+          pay INTEGER NOT NULL
+        );
+        CREATE INDEX pt_log_user ON pt_log (user_id, id);
+      `);
+      v = 10;
     }
 
     this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)", String(v));
@@ -1528,6 +1558,131 @@ export class Market extends DurableObject<Env> {
     }
   }
 
+  // ── 알바 ──
+  private ptLevels(userId: number): Levels {
+    const out: Levels = {};
+    for (const r of this.sql.exec("SELECT id, level FROM pt_upgrades WHERE user_id = ?", userId).toArray()) {
+      const def = upgradeDef(String(r.id));
+      if (def) out[def.id] = Math.min(def.max, Math.max(0, Number(r.level)));
+    }
+    return out;
+  }
+
+  private loadPt(userId: number): PtRun | null {
+    const r = this.sql.exec("SELECT run FROM pt_runs WHERE user_id = ?", userId).toArray()[0];
+    if (!r) return null;
+    try {
+      return JSON.parse(String(r.run)) as PtRun;
+    } catch {
+      this.sql.exec("DELETE FROM pt_runs WHERE user_id = ?", userId); // 깨진 기록은 버린다
+      return null;
+    }
+  }
+
+  private savePt(userId: number, run: PtRun): void {
+    this.sql.exec("INSERT OR REPLACE INTO pt_runs (user_id, run) VALUES (?, ?)", userId, JSON.stringify(run));
+  }
+
+  /** 근무를 끝내고 수입을 계좌에 넣는다. (트랜잭션 안에서 호출) */
+  private finishPt(userId: number, end: PtEnd): void {
+    this.sql.exec("DELETE FROM pt_runs WHERE user_id = ?", userId);
+    if (end.pay > 0) this.setCash(userId, this.getCash(userId) + end.pay);
+    this.sql.exec("INSERT INTO pt_log (user_id, ts, job, pay) VALUES (?, ?, ?, ?)", userId, Date.now(), end.job, end.pay);
+  }
+
+  private ptView(userId: number, run: PtRun | null, end: PtEnd | null, info: PtInfo | null, now: number): PtView {
+    const levels: Record<string, number> = { ...this.ptLevels(userId) };
+    if (run) return { phase: "play", levels, run: ptViewData(run, now, memorySeq), end: null, info };
+    if (end) return { phase: "over", levels, run: null, end, info };
+    return { phase: "idle", levels, run: null, end: null, info: null };
+  }
+
+  /**
+   * 알바 진행: 시작·판정·지급·업그레이드 구매를 서버가 한 트랜잭션으로 처리한다.
+   * 현금이 0원이어도 시작할 수 있고(배팅 없음), 수입은 근무가 끝날 때 현금으로 들어간다.
+   */
+  private handlePt(ws: WebSocket, att: Attachment, msg: Extract<ClientMsg, { t: "pt" }>): void {
+    const uid = att.userId;
+    // 카드 뒤집기는 짧은 간격으로 오므로 간격 검사는 규칙(최소 간격)에 맡기고, 나머지 요청은 속도를 제한한다
+    if (msg.act !== "state" && msg.act !== "flip" && this.rateLimited(uid)) {
+      ws.send(JSON.stringify({ t: "pt", ok: false, error: "너무 빠릅니다. 잠시 후 다시 시도하세요." } satisfies ServerMsg));
+      return;
+    }
+    let out: ServerMsg | null = null;
+    let moneyMoved = false;
+
+    this.ctx.storage.transactionSync(() => {
+      const now = Date.now();
+      const st: { run: PtRun | null; end: PtEnd | null; info: PtInfo | null } = { run: this.loadPt(uid), end: null, info: null };
+      const finish = (end: PtEnd): void => {
+        this.finishPt(uid, end);
+        st.run = null;
+        st.end = end;
+        moneyMoved = moneyMoved || end.pay > 0;
+      };
+      const view = (): PtView => this.ptView(uid, st.run, st.end, st.info, now);
+      const ok = (): void => { out = { t: "pt", ok: true, view: view() }; };
+      const err = (error: string): void => { out = { t: "pt", ok: false, error, view: view() }; };
+      /** 규칙 함수의 결과를 반영한다 */
+      const apply = (s: PtStep): void => {
+        if (s.k === "invalid") return err(s.error);
+        st.info = s.info ?? null;
+        if (s.k === "go") { st.run = s.run; this.savePt(uid, s.run); } else finish(s.end);
+        ok();
+      };
+
+      // 시간이 지난 근무는 무엇을 요청하든 먼저 그때까지의 수입으로 정산한다
+      if (st.run && isPtExpired(st.run, now)) {
+        const reason = st.run.job === "memory" ? "fail" : "time";
+        const r0: PtRun = st.run.job === "memory" ? { ...st.run, stats: { ...st.run.stats, rounds: st.run.step - 1 } } : st.run;
+        finish(ptSettle(r0, now, reason));
+      }
+
+      if (msg.act === "state") return ok();
+
+      if (msg.act === "buy") {
+        if (st.run) return err("근무 중에는 업그레이드를 살 수 없어요.");
+        const def = upgradeDef(String(msg.id));
+        if (!def) return err("알 수 없는 업그레이드입니다.");
+        const level = levelOf(this.ptLevels(uid), def.id);
+        const cost = upgradeCost(def.id, level);
+        if (cost === null) return err("이미 최고 레벨입니다.");
+        const cash = this.getCash(uid);
+        if (cash < cost) return err("잔고가 부족합니다.");
+        this.setCash(uid, cash - cost);
+        this.sql.exec("INSERT OR REPLACE INTO pt_upgrades (user_id, id, level) VALUES (?, ?, ?)", uid, def.id, level + 1);
+        moneyMoved = true;
+        return ok();
+      }
+
+      if (msg.act === "start") {
+        if (st.run) return err("진행 중인 근무가 있습니다.");
+        if (!JOB_IDS.includes(msg.job)) return err("알 수 없는 알바입니다.");
+        st.end = null;
+        st.run = startPtRun(msg.job, this.ptLevels(uid), randomBelow(0x7fffffff), now);
+        this.savePt(uid, st.run);
+        return ok();
+      }
+
+      // 이하는 진행 중인 근무가 있어야 한다. 방금 시간이 다 돼 끝난 경우에는 오류 대신 끝난 결과를 알려 준다.
+      if (!st.run) return st.end ? ok() : err("진행 중인 근무가 없습니다.");
+
+      if (msg.act === "end") {
+        if (st.run.job === "calc") return err("계산 알바는 답을 제출해야 끝납니다.");
+        finish(ptFinishEarly(st.run, now));
+        return ok();
+      }
+      if (msg.act === "submit") return apply(ptSubmitCalc(st.run, msg.answers, now));
+      if (msg.act === "mem") return apply(ptSubmitMemory(st.run, msg.input, now));
+      if (msg.act === "flip") return apply(ptFlip(st.run, Number(msg.i), now));
+      if (msg.act === "pull") return apply(ptPull(st.run, Number(msg.ms), now));
+      err("알 수 없는 요청입니다.");
+    });
+
+    ws.send(JSON.stringify(out ?? { t: "pt", ok: false, error: "처리하지 못했습니다." }));
+    if (moneyMoved) ws.send(JSON.stringify(this.accountMsg(uid)));
+  }
+
   // ── 블록 채우기 퍼즐 ──
   private loadRun(userId: number): Run | null {
     const r = this.sql
@@ -2115,7 +2270,7 @@ export class Market extends DurableObject<Env> {
       const att = ws.deserializeAttachment() as Attachment | null;
       if (!att) return;
       const blocked =
-        msg.t === "order" || msg.t === "bailout" || msg.t === "lottery" || msg.t === "prestige" || msg.t === "reserve" || msg.t === "claim" || msg.t === "puzzle"
+        msg.t === "order" || msg.t === "bailout" || msg.t === "lottery" || msg.t === "prestige" || msg.t === "reserve" || msg.t === "claim" || msg.t === "puzzle" || msg.t === "pt"
           ? this.gate(att)
           : null;
       if (blocked) {
@@ -2139,6 +2294,7 @@ export class Market extends DurableObject<Env> {
         else if (msg.t === "hof") this.handleHof(ws);
         else if (msg.t === "lottery") this.handleLottery(ws, att, msg);
         else if (msg.t === "puzzle") this.handlePuzzle(ws, att, msg);
+        else if (msg.t === "pt") this.handlePt(ws, att, msg);
         else if (msg.t === "prestige") this.handlePrestige(ws, att);
         else if (msg.t === "stats") this.handleStats(ws, att);
         else if (msg.t === "quests") this.handleQuests(ws, att);
@@ -2152,7 +2308,7 @@ export class Market extends DurableObject<Env> {
         try {
           if (msg.t === "order") ws.send(JSON.stringify({ t: "order", id: Number(msg.id) || 0, ok: false, error } satisfies ServerMsg));
           else if (msg.t === "lottery") ws.send(JSON.stringify({ t: "lottery", ok: false, error } satisfies ServerMsg));
-          else if (msg.t === "bailout" || msg.t === "prestige" || msg.t === "reserve" || msg.t === "claim" || msg.t === "puzzle") ws.send(JSON.stringify({ t: msg.t, ok: false, error } satisfies ServerMsg));
+          else if (msg.t === "bailout" || msg.t === "prestige" || msg.t === "reserve" || msg.t === "claim" || msg.t === "puzzle" || msg.t === "pt") ws.send(JSON.stringify({ t: msg.t, ok: false, error } satisfies ServerMsg));
         } catch { /* 소켓이 이미 닫힘 */ }
       }
     }

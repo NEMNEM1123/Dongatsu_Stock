@@ -17,7 +17,7 @@ export interface Account {
   lotteryLeft: number;
 }
 
-export type View = "trade" | "rank" | "lottery" | "puzzle" | "more" | "help";
+export type View = "trade" | "rank" | "lottery" | "puzzle" | "job" | "more" | "help";
 export type HelpTab = "guide" | "patch";
 
 type Evt = "account" | "stock" | "feed" | "trades" | "fav" | "market" | "ref" | "view" | "stats" | "quests" | "reserves" | "help";

@@ -52,7 +52,7 @@ const steps = (): Step[] => [
     title: "더 즐기기",
     body: [
       `복권: 1장 ${won(RULES.LOTTERY_PRICE)}원, 하루 ${RULES.LOTTERY_PER_DAY}장까지. 매일 새 미션을 달성하면 보상금도 받아요.`,
-      `순자산이 0이 되면 하루 한 번 파산 구제금 ${won(RULES.BAILOUT_AMOUNT)}원을 받을 수 있어요.`,
+      `순자산이 0이 되면 하루 ${RULES.BAILOUT_PER_DAY}번까지 파산 구제금 ${won(RULES.BAILOUT_AMOUNT)}원을 받을 수 있어요.`,
       `순자산 ${won(RULES.PRESTIGE_NET_WORTH)}원을 넘으면 프레스티지로 자산을 초기화하고 ★을 얻습니다. 별 하나마다 시작 자금이 ${RULES.PRESTIGE_BONUS_PER_STAR * 100}% 늘어요.`,
       "더 자세한 설명은 위쪽 '사용법'(휴대폰은 더보기 → 사용법)에서 언제든 볼 수 있어요. 새 소식은 '패치노트'에 올라와요.",
     ],
