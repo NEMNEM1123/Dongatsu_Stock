@@ -20,7 +20,7 @@ import { cashOut, checkBet, isExpired, lose, newRun, nextStage, puzzleOf, remain
 import { achievementViews, claimKey, missionViews, summarize, type LotterySummary, type TradeRow } from "../shared/records";
 import { firstTrigger, isClosing, parseReserve, type ReserveCond, type ReserveItem, type ReserveStatus } from "../shared/reserve";
 import { autoEventChance, makeAutoEvent, toEffect, validateEvent } from "../shared/events";
-import { CLIENT_VERSION, MIN_CLIENT_VERSION } from "../shared/version";
+import { APP_VERSION, CLIENT_VERSION, MIN_CLIENT_VERSION } from "../shared/version";
 import {
   gainValues, liveValues, METRICS, peakUpdate, PERIODS, rankBy, startCapital, weekIdOf, weekLabel,
   type Baseline, type Metric, type UserSnap, type Values,
@@ -2307,6 +2307,7 @@ export class Market extends DurableObject<Env> {
       px: { ...this.currentPx(), ids: STOCKS.map((s) => s.id) },
       days: this.dayInits(),
       news: newsUntil > Date.now() ? this.recentNews() : [],
+      appVersion: APP_VERSION,
       newsUntil,
       maintenance: this.maintenanceInfo(),
       minVersion: this.minVersion(),

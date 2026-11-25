@@ -3,7 +3,7 @@ import type { UserInfo } from "../../shared/protocol";
 import { getStock } from "../../shared/stocks";
 import { RULES } from "../../shared/rules";
 import { netWorth } from "../../shared/trading";
-import { CLIENT_VERSION } from "../../shared/version";
+import { APP_VERSION, CLIENT_VERSION } from "../../shared/version";
 import { createBottom } from "./bottom";
 import { PriceChart } from "./chart";
 import { Connection } from "./connection";
@@ -287,6 +287,12 @@ export function mountApp(root: HTMLElement, user: UserInfo, onLogout: () => void
   conn.onMessage = (m) => {
     switch (m.t) {
       case "hello":
+        // 새 버전이 배포되어 재접속한 경우: 화면도 새 버전으로 바꾼다. 같은 버전으로는 한 번만 시도해서 새로고침이 반복되지 않게 한다.
+        if (m.appVersion !== APP_VERSION && sessionStorage.getItem("reloadedFor") !== m.appVersion) {
+          sessionStorage.setItem("reloadedFor", m.appVersion);
+          location.reload();
+          return;
+        }
         store.online = m.online;
         topbar.setOnline(m.online);
         lottery.reset();
