@@ -31,8 +31,6 @@ export function createPuzzleView(): {
   let puzzleKey = "";
   const placed = new Map<number, Placement>();
   const rots = new Map<number, number>();
-  let sel: number | null = null;
-  let hover: [number, number] | null = null;
   let deadlineAt = 0; // performance.now() 기준 표시용 마감
   let settleAsked = false;
 
@@ -74,10 +72,33 @@ export function createPuzzleView(): {
     render();
   }
 
-  // ── 조각 놓기 ──
+  // ── 조각 놓기: 끌어서 놓기 ──
+  // 조각을 누른 채 움직이면 조각이 손가락(마우스)을 따라 움직이고, 놓는 자리에 맞춰 칸이 미리 표시된다.
+  // 조각을 톡 누르면 회전. 끄는 중에는 R 키·마우스 휠·오른쪽 클릭·다른 손가락으로 톡 누르기로 회전한다.
   const pieces = (): PieceDef[] => view?.puzzle?.pieces ?? [];
   const size = (): number => view?.puzzle?.size ?? 0;
   const pieceById = (id: number): PieceDef => pieces().find((p) => p.id === id)!;
+  const TOUCH_LIFT = 28; // 터치로 끌 때 손가락에 가려지지 않도록 조각을 손가락 위로 띄우는 간격(px)
+  const TAP_SLOP = 6; // 이만큼 이하로 움직이면 '끌기'가 아니라 '톡 누르기'로 본다(px)
+
+  interface Metrics { left: number; top: number; stride: number; cell: number }
+  interface Drag {
+    id: number;
+    pointerId: number;
+    touch: boolean;
+    origin: Placement | null; // 판에서 집어 든 조각이면 원래 자리
+    srcEl: HTMLElement | null; // 트레이에서 집어 든 조각의 요소
+    startX: number;
+    startY: number;
+    px: number;
+    py: number;
+    moved: boolean;
+    box: HTMLElement;
+    cols: number;
+    rows: number;
+  }
+  let drag: Drag | null = null;
+  let ghost: { id: number; r: number; c: number } | null = null;
 
   function owners(): number[] {
     const o = new Array<number>(size() * size()).fill(-1);
@@ -87,31 +108,27 @@ export function createPuzzleView(): {
     return o;
   }
 
-  /** 칸 (r,c)를 조각의 첫 번째 칸(맨 윗줄 왼쪽)에 맞춰 놓는 배치 */
-  function anchored(id: number, r: number, c: number): Placement {
-    const rot = rots.get(id) ?? 0;
-    const first = rotate(pieceById(id).cells, rot)[0]!;
-    return { id, rot, x: c - first[1], y: r - first[0] };
-  }
-
   function fits(pl: Placement, occ: number[]): boolean {
     const n = size();
     return placedCells(pieceById(pl.id), pl).every(([r, c]) => r >= 0 && c >= 0 && r < n && c < n && occ[r * n + c] === -1);
   }
 
+  /** 회전한 조각의 왼쪽 위 모서리를 (r,c)칸에 맞춘 배치 */
+  const boxAt = (id: number, r: number, c: number): Placement => ({ id, rot: rots.get(id) ?? 0, x: c, y: r });
+
   function paintBoard(): void {
     const n = size();
     if (!n || cellEls.length !== n * n) return;
     const occ = owners();
-    const ghost = new Map<number, boolean>();
-    if (sel !== null && hover) {
-      const pl = anchored(sel, hover[0], hover[1]);
+    const mark = new Map<number, boolean>();
+    if (ghost) {
+      const pl = boxAt(ghost.id, ghost.r, ghost.c);
       const ok = fits(pl, occ);
-      for (const [r, c] of placedCells(pieceById(sel), pl)) if (r >= 0 && c >= 0 && r < n && c < n) ghost.set(r * n + c, ok);
+      for (const [r, c] of placedCells(pieceById(ghost.id), pl)) if (r >= 0 && c >= 0 && r < n && c < n) mark.set(r * n + c, ok);
     }
     cellEls.forEach((cell, i) => {
       const o = occ[i]!;
-      const g = ghost.get(i);
+      const g = mark.get(i);
       cell.className = `pz-cell${o >= 0 ? ` filled pc${o % 8}` : ""}${g === undefined ? "" : g ? " ghost-ok" : " ghost-bad"}`;
     });
   }
@@ -138,21 +155,12 @@ export function createPuzzleView(): {
     }
     trayEl.replaceChildren(
       ...rest.map((p) => {
-        const b = el("button", { class: `pz-piece${sel === p.id ? " on" : ""}`, type: "button", title: "누르면 선택, 한 번 더 누르면 회전" }, miniShape(p, rots.get(p.id) ?? 0));
-        b.onclick = () => {
-          if (sel === p.id) rotateSel();
-          else { sel = p.id; paintBoard(); renderTray(); }
-        };
+        const b = el("button", { class: "pz-piece", type: "button", title: "끌어서 놓기 · 톡 누르면 회전" }, miniShape(p, rots.get(p.id) ?? 0));
+        b.onpointerdown = (e) => startDrag(e, p.id, null, b);
+        b.oncontextmenu = (e) => e.preventDefault();
         return b;
       }),
     );
-  }
-
-  function rotateSel(): void {
-    if (sel === null) return;
-    rots.set(sel, ((rots.get(sel) ?? 0) + 1) % 4);
-    paintBoard();
-    renderTray();
   }
 
   function setMsg(text: string): void {
@@ -160,31 +168,131 @@ export function createPuzzleView(): {
     if (msgEl) msgEl.textContent = text;
   }
 
-  function clickCell(r: number, c: number): void {
-    if (busy || !view?.puzzle) return;
-    const n = size();
-    const occ = owners();
-    const here = occ[r * n + c]!;
-    if (sel !== null) {
-      const pl = anchored(sel, r, c);
-      if (fits(pl, occ)) {
-        placed.set(sel, pl);
-        sel = null;
+  function metrics(): Metrics | null {
+    if (cellEls.length < 2) return null;
+    const a = cellEls[0]!.getBoundingClientRect();
+    const b = cellEls[1]!.getBoundingClientRect();
+    return { left: a.left, top: a.top, stride: b.left - a.left, cell: a.width };
+  }
+
+  /** 끌고 다니는 조각: 판의 칸과 같은 크기로 그려서 놓일 모습 그대로 보이게 한다 */
+  function floatShape(id: number, m: Metrics): { box: HTMLElement; cols: number; rows: number } {
+    const shape = rotate(pieceById(id).cells, rots.get(id) ?? 0);
+    const rows = Math.max(...shape.map((c) => c[0])) + 1;
+    const cols = Math.max(...shape.map((c) => c[1])) + 1;
+    const on = new Set(shape.map((c) => `${c[0]},${c[1]}`));
+    const box = el("div", { class: "pz-float" });
+    box.style.gridTemplateColumns = `repeat(${cols}, ${m.cell}px)`;
+    box.style.gridAutoRows = `${m.cell}px`;
+    box.style.gap = `${m.stride - m.cell}px`;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) box.appendChild(el("i", { class: on.has(`${r},${c}`) ? `pc${id % 8}` : "gap" }));
+    }
+    return { box, cols, rows };
+  }
+
+  /** 조각을 손가락 위치로 옮기고, 놓일 칸을 미리 표시한다 */
+  function moveDrag(): void {
+    const d = drag;
+    const m = metrics();
+    if (!d || !m) return;
+    const w = d.cols * m.stride - (m.stride - m.cell);
+    const h = d.rows * m.stride - (m.stride - m.cell);
+    const left = d.px - w / 2;
+    const top = d.touch ? d.py - h - TOUCH_LIFT : d.py - h / 2;
+    d.box.style.transform = `translate(${left}px, ${top}px)`;
+    // 조각의 왼쪽 위 모서리에서 가장 가까운 칸에 붙인다
+    ghost = { id: d.id, c: Math.round((left - m.left) / m.stride), r: Math.round((top - m.top) / m.stride) };
+    paintBoard();
+  }
+
+  function rotateDrag(): void {
+    const d = drag;
+    const m = metrics();
+    if (!d || !m) return;
+    rots.set(d.id, ((rots.get(d.id) ?? 0) + 1) % 4);
+    const f = floatShape(d.id, m);
+    d.box.replaceWith(f.box);
+    d.box = f.box;
+    d.cols = f.cols;
+    d.rows = f.rows;
+    moveDrag();
+  }
+
+  const onDragMove = (e: PointerEvent): void => {
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    drag.px = e.clientX;
+    drag.py = e.clientY;
+    if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) > TAP_SLOP) drag.moved = true;
+    if (drag.moved) moveDrag();
+  };
+  const onDragUp = (e: PointerEvent): void => {
+    if (drag && e.pointerId === drag.pointerId) endDrag(e.type === "pointerup");
+  };
+  const onExtraPointer = (e: PointerEvent): void => {
+    if (drag && e.pointerId !== drag.pointerId) { e.preventDefault(); rotateDrag(); } // 다른 손가락으로 톡: 회전
+  };
+  const onWheel = (e: WheelEvent): void => {
+    if (!drag) return;
+    e.preventDefault();
+    rotateDrag();
+  };
+  const onCtx = (e: Event): void => { if (drag) { e.preventDefault(); rotateDrag(); } };
+
+  function startDrag(e: PointerEvent, id: number, origin: Placement | null, srcEl: HTMLElement | null): void {
+    if (drag || busy || !view?.puzzle || (e.pointerType === "mouse" && e.button === 2)) return;
+    const m = metrics();
+    if (!m) return;
+    e.preventDefault();
+    if (origin) placed.delete(id); // 판에서 집어 들었으면 일단 비운다
+    const f = floatShape(id, m);
+    document.body.appendChild(f.box);
+    srcEl?.classList.add("drag");
+    drag = { id, pointerId: e.pointerId, touch: e.pointerType !== "mouse", origin, srcEl, startX: e.clientX, startY: e.clientY, px: e.clientX, py: e.clientY, moved: false, box: f.box, cols: f.cols, rows: f.rows };
+    window.addEventListener("pointermove", onDragMove);
+    window.addEventListener("pointerup", onDragUp);
+    window.addEventListener("pointercancel", onDragUp);
+    window.addEventListener("pointerdown", onExtraPointer, { passive: false });
+    window.addEventListener("wheel", onWheel, { passive: false });
+    window.addEventListener("contextmenu", onCtx);
+    moveDrag(); // 집은 순간부터 조각이 손가락 위치에 보이게 한다
+  }
+
+  function endDrag(drop: boolean): void {
+    const d = drag;
+    if (!d) return;
+    drag = null;
+    window.removeEventListener("pointermove", onDragMove);
+    window.removeEventListener("pointerup", onDragUp);
+    window.removeEventListener("pointercancel", onDragUp);
+    window.removeEventListener("pointerdown", onExtraPointer);
+    window.removeEventListener("wheel", onWheel);
+    window.removeEventListener("contextmenu", onCtx);
+    d.box.remove();
+    const g = ghost;
+    ghost = null;
+
+    if (!d.moved) { // 톡 눌렀다: 트레이 조각은 회전, 판 위 조각은 제자리로
+      if (d.origin) placed.set(d.id, d.origin);
+      else rots.set(d.id, ((rots.get(d.id) ?? 0) + 1) % 4);
+      paintBoard();
+      renderTray();
+      return;
+    }
+    if (drop && g) {
+      const pl = boxAt(d.id, g.r, g.c);
+      if (fits(pl, owners())) {
+        placed.set(d.id, pl);
         setMsg("");
         paintBoard();
         renderTray();
         if (placed.size === pieces().length) send({ t: "puzzle", act: "submit", placements: [...placed.values()] });
         return;
       }
-      if (here < 0) { setMsg("그 자리에는 놓을 수 없어요."); return; }
+      if (g.r >= -1 && g.c >= -1 && g.r < size() && g.c < size()) setMsg("그 자리에는 놓을 수 없어요.");
     }
-    if (here >= 0) { // 놓인 조각을 다시 집는다
-      placed.delete(here);
-      sel = here;
-      setMsg("");
-      paintBoard();
-      renderTray();
-    }
+    paintBoard();
+    renderTray(); // 놓지 못한 조각은 트레이로 돌아간다
   }
 
   // ── 화면 ──
@@ -288,13 +396,14 @@ export function createPuzzleView(): {
     const n = size();
     const board = el("div", { class: "pz-board" });
     board.style.gridTemplateColumns = `repeat(${n}, 1fr)`;
-    board.onpointerleave = () => { hover = null; paintBoard(); };
     cellEls = [];
     for (let r = 0; r < n; r++) {
       for (let c = 0; c < n; c++) {
         const cell = el("div", { class: "pz-cell" });
-        cell.onpointerenter = () => { hover = [r, c]; paintBoard(); };
-        cell.onclick = () => clickCell(r, c);
+        cell.onpointerdown = (e) => {
+          const id = owners()[r * n + c]!;
+          if (id >= 0) startDrag(e, id, placed.get(id)!, null);
+        };
         cellEls.push(cell);
         board.appendChild(cell);
       }
@@ -303,10 +412,8 @@ export function createPuzzleView(): {
     timerText = el("span", { class: "num" });
     msgEl = el("div", { class: "warn-text pz-msg" }, msg);
     trayEl = el("div", { class: "pz-tray" });
-    const rot = el("button", { class: "btn", type: "button" }, "회전 (R)");
-    rot.onclick = rotateSel;
     const reset = el("button", { class: "btn", type: "button" }, "모두 되돌리기");
-    reset.onclick = () => { placed.clear(); sel = null; setMsg(""); paintBoard(); renderTray(); };
+    reset.onclick = () => { placed.clear(); setMsg(""); paintBoard(); renderTray(); };
     body.replaceChildren(
       el(
         "div",
@@ -318,10 +425,10 @@ export function createPuzzleView(): {
       ),
       el("div", { class: "pz-timer" }, timerFill),
       el("div", { class: "pz-stagewrap" }, board),
-      el("div", { class: "pz-tools" }, rot, reset),
+      el("div", { class: "pz-tools" }, reset),
       trayEl,
       msgEl,
-      el("div", { class: "muted pz-help" }, "조각을 누르고 판의 칸을 누르면 놓여요. 놓은 조각을 누르면 다시 집어요. 한 번 더 누르거나 R 키로 회전해요."),
+      el("div", { class: "muted pz-help" }, "조각을 끌어서 판에 놓으세요. 조각을 톡 누르면 회전해요. 끄는 중에는 다른 손가락으로 화면을 톡 누르거나(마우스는 R 키·오른쪽 클릭) 회전할 수 있어요. 놓은 조각도 다시 끌어서 옮길 수 있어요."),
     );
     paintBoard();
     renderTray();
@@ -329,6 +436,7 @@ export function createPuzzleView(): {
   }
 
   function render(): void {
+    if (drag) endDrag(false); // 끄는 도중 화면이 바뀌면 조각을 트레이로 돌려놓는다
     const phase = view?.phase ?? "idle";
     if (phase === "play" && view?.puzzle) renderPlay();
     else if (phase === "choice") renderChoice();
@@ -359,15 +467,12 @@ export function createPuzzleView(): {
         puzzleKey = key;
         placed.clear();
         rots.clear();
-        sel = null;
-        hover = null;
         settleAsked = false;
       }
       deadlineAt = performance.now() + v.remainMs;
     } else {
       puzzleKey = "";
       placed.clear();
-      sel = null;
     }
   }
 
@@ -375,7 +480,7 @@ export function createPuzzleView(): {
     if (store.view !== "puzzle" || e.ctrlKey || e.metaKey || e.altKey) return;
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
-    if (e.key.toLowerCase() === "r") rotateSel();
+    if (e.key.toLowerCase() === "r") rotateDrag();
   });
 
   // 배팅 금액을 입력하는 중에는 화면을 다시 그리지 않는다 (입력이 끊기지 않게)

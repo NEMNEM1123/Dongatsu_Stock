@@ -14,6 +14,15 @@ export const PATCH_TAG_LABEL: Record<PatchTag, string> = { new: "새 기능", fi
 
 export const PATCH_NOTES: readonly PatchEntry[] = [
   {
+    id: "2026-11-25.3",
+    date: "2026-11-25",
+    title: "v1.1.2 · 블록 채우기 끌어서 놓기",
+    items: [
+      { tag: "change", text: "블록 채우기 조작을 바꿨어요. 조각을 손가락(마우스)으로 끌어서 판에 놓을 수 있고, 끄는 동안 조각이 따라 움직여요. 모바일에서도 똑같이 돼요." },
+      { tag: "new", text: "끌 때 놓일 칸이 초록(가능)·빨강(불가)으로 미리 보여요. 조각을 톡 누르면 회전하고, 끄는 중에는 다른 손가락으로 화면을 톡 누르면 회전해요." },
+    ],
+  },
+  {
     id: "2026-11-25.2",
     date: "2026-11-25",
     title: "v1.1.1 · 블록 채우기 난이도·보상 조정",
