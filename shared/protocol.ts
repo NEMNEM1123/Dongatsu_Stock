@@ -3,6 +3,8 @@
 import type { Candle, IntervalKey } from "./candles";
 import type { Position } from "./trading";
 import type { Metric, Period } from "./leaderboard";
+import type { AchievementView, MissionView, MyStats } from "./records";
+import type { ReserveCond, ReserveItem } from "./reserve";
 
 export interface Checkpoint {
   stock: number;
@@ -116,7 +118,13 @@ export type ClientMsg =
   | { t: "lottery"; count: number }
   | { t: "prestige" }
   | { t: "trades" }
-  | { t: "bailout" };
+  | { t: "bailout" }
+  | { t: "stats" } // 내 성적표
+  | { t: "quests" } // 오늘의 미션 · 업적
+  | { t: "claim"; id: string } // 미션 보상 받기
+  | { t: "reserves" } // 내 예약 주문 목록
+  | { t: "reserve"; stock: number; action: OrderAction; qty: number; leverage?: number; cond: ReserveCond; trigger: number }
+  | { t: "cancelReserve"; id: number };
 
 /** 서버 -> 클라이언트 */
 export type ServerMsg =
@@ -151,6 +159,14 @@ export type ServerMsg =
   | { t: "liquidated"; stock: number; side: "long" | "short"; qty: number; price: number; returned: number }
   | { t: "trades"; trades: TradeRecord[] }
   | { t: "bailout"; ok: boolean; error?: string; amount?: number }
+  | { t: "stats"; stats: MyStats }
+  | { t: "quests"; day: number; missions: MissionView[]; achievements: AchievementView[] }
+  | { t: "claim"; ok: boolean; id?: string; error?: string; amount?: number }
+  | { t: "reserves"; items: ReserveItem[] } // 대기 중 + 최근 끝난 예약
+  | { t: "reserve"; ok: true; item: ReserveItem }
+  | { t: "reserve"; ok: false; error: string }
+  | { t: "cancelReserve"; ok: boolean; id: number; error?: string }
+  | { t: "reserveDone"; item: ReserveItem } // 예약이 체결·실패·만료되었을 때 서버가 알림
   | {
       t: "lb";
       period: Period;

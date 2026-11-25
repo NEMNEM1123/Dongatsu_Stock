@@ -2,13 +2,14 @@ import { getStock } from "../../shared/stocks";
 import { netWorth } from "../../shared/trading";
 import { el, setClass, setText } from "./dom";
 import { bigWon, pct, shortQty, signed, won } from "./format";
+import { patchUnseen } from "./patch";
 import { book } from "./pricebook";
 import { store } from "./store";
 import { toast } from "./toast";
 
 /** 상단 바: 로고 · 탭 · 접속자 · 내 순자산 */
 export function createTopbar(onLogout: () => void): { el: HTMLElement; tick: () => void; setOnline: (n: number) => void } {
-  const tabs: [string, string][] = [["stock", "거래소"], ["coin", "코인"], ["lottery", "복권"], ["rank", "순위"], ["more", "더보기"]];
+  const tabs: [string, string][] = [["stock", "거래소"], ["coin", "코인"], ["lottery", "복권"], ["rank", "순위"], ["help", "사용법"], ["more", "더보기"]];
   const tabEls = new Map<string, HTMLElement>();
   const nav = el("nav", { class: "nav" });
   for (const [key, label] of tabs) {
@@ -19,6 +20,7 @@ export function createTopbar(onLogout: () => void): { el: HTMLElement; tick: () 
         store.setMarket(key);
       } else if (key === "rank") store.setView("rank");
       else if (key === "lottery") store.setView("lottery");
+      else if (key === "help") store.openHelp(store.helpTab);
       else if (key === "more") store.setView("more");
       else toast(`${label}은(는) 준비 중입니다.`);
     };
@@ -42,10 +44,15 @@ export function createTopbar(onLogout: () => void): { el: HTMLElement; tick: () 
     logout,
   );
   const sync = () => {
-    for (const [k, b] of tabEls) b.setAttribute("aria-selected", String(store.view === "rank" ? k === "rank" : store.view === "lottery" ? k === "lottery" : store.view === "more" ? k === "more" : k === store.market));
+    const current = store.view === "trade" ? store.market : store.view; // 거래 화면은 주식/코인 탭, 나머지는 같은 이름의 탭
+    for (const [k, b] of tabEls) {
+      b.setAttribute("aria-selected", String(k === current));
+      b.classList.toggle("has-dot", k === "help" && patchUnseen()); // 안 읽은 패치노트 표시
+    }
   };
   store.on("market", sync);
   store.on("view", sync);
+  store.on("help", sync);
   sync();
   return {
     el: root,

@@ -1,6 +1,7 @@
 import { RULES } from "../../shared/rules";
 import { getStock } from "../../shared/stocks";
 import type { OrderAction } from "../../shared/protocol";
+import { describeCondition, isClosing, type ReserveCond } from "../../shared/reserve";
 import {
   buy, cover, liquidationPrice, maxBuyQty, maxShortQty, sell, short,
   type OrderResult,
@@ -18,6 +19,9 @@ export function createOrderPanel(): { el: HTMLElement; tick: () => void; setTab:
   let leverage = 1;
   let seq = 0;
   let armed: number | undefined; // "한 번 더 눌러 확인" 대기
+  let mode: "market" | "reserve" = "market";
+  let cond: ReserveCond = "le";
+  let presetSig = "";
 
   const tabBtns = new Map<Tab, HTMLElement>();
   const tabsEl = el("div", { class: "tabs op-tabs" });
@@ -67,11 +71,43 @@ export function createOrderPanel(): { el: HTMLElement; tick: () => void; setTab:
   const msg = el("div", { class: "op-msg" });
   const exec = el("button", { class: "btn btn-lg", type: "button" }, "매수");
 
+  // ── 예약 주문 (지정가 · 손절 · 익절) ──
+  const modeBtns = new Map<"market" | "reserve", HTMLElement>();
+  const modeBox = el("div", { class: "seg" });
+  for (const [k, label] of [["market", "시장가"], ["reserve", "예약"]] as ["market" | "reserve", string][]) {
+    const b = el("button", { class: "seg-btn", type: "button" }, label);
+    b.onclick = () => { mode = k; resetTrigger(); cancelArm(); };
+    modeBtns.set(k, b);
+    modeBox.appendChild(b);
+  }
+  const modeRow = el("div", { class: "op-row" }, el("span", { class: "muted" }, "주문 방식"), modeBox);
+
+  const condBtns = new Map<ReserveCond, HTMLElement>();
+  const condBox = el("div", { class: "seg" });
+  for (const [k, label] of [["le", "이하"], ["ge", "이상"]] as [ReserveCond, string][]) {
+    const b = el("button", { class: "seg-btn", type: "button" }, label);
+    b.onclick = () => { cond = k; update(); };
+    condBtns.set(k, b);
+    condBox.appendChild(b);
+  }
+  const trig = el("input", { class: "input num", type: "number", min: String(RULES.PRICE_FLOOR), step: "1", inputMode: "numeric" });
+  trig.oninput = () => update();
+  const presets = el("div", { class: "op-quick" });
+  const resvInfo = el("div", { class: "op-msg muted" });
+  const resv = el(
+    "div",
+    { class: "op-resv" },
+    el("div", { class: "op-row" }, el("span", { class: "muted" }, "조건"), condBox),
+    el("div", { class: "op-row" }, el("span", { class: "muted" }, "가격"), trig),
+    presets,
+    resvInfo,
+  );
+
   const root = el(
     "div",
     { class: "panel orderpanel" },
     tabsEl,
-    el("div", { class: "op-body" }, levWrap, el("div", { class: "op-row" }, el("span", { class: "muted" }, "수량"), qty), quick, refEl, table, msg, exec),
+    el("div", { class: "op-body" }, modeRow, levWrap, el("div", { class: "op-row" }, el("span", { class: "muted" }, "수량"), qty), quick, refEl, resv, table, msg, exec),
   );
 
   // ── 계산 ──
@@ -116,6 +152,52 @@ export function createOrderPanel(): { el: HTMLElement; tick: () => void; setTab:
     return !!pos && q >= pos.qty; // 전량 정리
   };
 
+  /** 조건 가격과 방향의 기본값: 매수·매도는 "이하"(지정가 매수·손절), 공매도·환매는 "이상"(손절) */
+  function resetTrigger(): void {
+    const a = currentAction();
+    cond = a === "short" || a === "cover" ? "ge" : "le";
+    if (book.ready) trig.value = String(Math.max(RULES.PRICE_FLOOR, Math.round(priceNow())));
+    presetSig = "";
+  }
+
+  /** 정리 주문일 때만: 평균가 기준 손절·익절 빠른 입력 */
+  function syncPresets(): void {
+    const a = currentAction();
+    const pos = isClosing(a) ? (a === "sell" ? heldLong() : heldShort()) : undefined;
+    const sig = pos ? `${a}:${stockId()}:${pos.cost}:${pos.qty}` : "";
+    if (sig === presetSig) return;
+    presetSig = sig;
+    presets.replaceChildren();
+    if (!pos) return;
+    const avg = pos.cost / pos.qty;
+    const stop = RULES.RESERVE_STOP_PCT, take = RULES.RESERVE_TAKE_PCT;
+    const defs: [string, ReserveCond, number][] =
+      a === "sell"
+        ? [[`손절 -${stop * 100}%`, "le", avg * (1 - stop)], [`익절 +${take * 100}%`, "ge", avg * (1 + take)]]
+        : [[`손절 +${stop * 100}%`, "ge", avg * (1 + stop)], [`익절 -${take * 100}%`, "le", avg * (1 - take)]];
+    for (const [label, c, price] of defs) {
+      const b = el("button", { class: "btn", type: "button" }, label);
+      b.onclick = () => { cond = c; trig.value = String(Math.max(RULES.PRICE_FLOOR, Math.round(price))); update(); };
+      presets.appendChild(b);
+    }
+  }
+
+  /** 예약 입력 검사. 문제가 없으면 null */
+  function reserveError(): string | null {
+    const q = Math.floor(Number(qty.value));
+    const t = Math.floor(Number(trig.value));
+    if (!Number.isFinite(q) || q < 1) return "수량을 입력하세요.";
+    if (!Number.isFinite(t) || t < RULES.PRICE_FLOOR) return `조건 가격은 ${won(RULES.PRICE_FLOOR)}원 이상이어야 합니다.`;
+    const a = currentAction();
+    if (isClosing(a)) {
+      const pos = a === "sell" ? heldLong() : heldShort();
+      if (!pos) return a === "sell" ? "보유한 수량이 없습니다." : "공매도 포지션이 없습니다.";
+      if (q > pos.qty) return "보유 수량보다 많습니다.";
+    }
+    if (store.reserves.filter((x) => x.status === "pending").length >= RULES.RESERVE_MAX) return `예약은 최대 ${RULES.RESERVE_MAX}건까지입니다.`;
+    return null;
+  }
+
   function cancelArm(): void {
     if (armed !== undefined) { clearTimeout(armed); armed = undefined; }
     update();
@@ -124,6 +206,7 @@ export function createOrderPanel(): { el: HTMLElement; tick: () => void; setTab:
   function setTab(t: Tab): void {
     tab = t;
     if (t !== "buy") leverage = 1;
+    resetTrigger();
     cancelArm();
     update();
   }
@@ -142,6 +225,36 @@ export function createOrderPanel(): { el: HTMLElement; tick: () => void; setTab:
     setClass(exec, `btn btn-lg ${a === "buy" || a === "cover" ? "btn-buy" : "btn-sell"}`);
     if (armed === undefined) setText(exec, `${labels[a]}${a === "buy" || a === "cover" ? "" : ""}`);
     else setText(exec, "한 번 더 눌러 확인");
+
+    for (const [k, b] of modeBtns) setClass(b, `seg-btn${k === mode ? " on" : ""}`);
+    const reserving = mode === "reserve";
+    resv.hidden = !reserving;
+    table.hidden = reserving;
+    if (reserving) {
+      for (const [k, b] of condBtns) setClass(b, `seg-btn${k === cond ? " on" : ""}`);
+      syncPresets();
+      setClass(exec, `btn btn-lg ${a === "buy" || a === "cover" ? "btn-buy" : "btn-sell"}`);
+      setText(exec, "예약 등록");
+      const err = reserveError();
+      if (err) {
+        setText(resvInfo, err);
+        setClass(resvInfo, "op-msg warn-text");
+      } else {
+        const q = Math.floor(Number(qty.value));
+        const t = Math.floor(Number(trig.value));
+        const now = book.ready ? priceNow() : 0;
+        const already = now > 0 && (cond === "le" ? now <= t : now >= t);
+        setText(
+          resvInfo,
+          `가격이 ${describeCondition(cond, t)}이 되면 ${labels[a]} ${won(q)}주${already ? " · 지금 가격이 이미 조건을 만족해 다음 시세 갱신 때 바로 체결됩니다" : ""} (현재 ${won(now)}원)`,
+        );
+        setClass(resvInfo, "op-msg muted");
+      }
+      setText(msg, "");
+      exec.disabled = !book.ready || err !== null;
+      refEl.hidden = true;
+      return;
+    }
 
     if (!book.ready) {
       exec.disabled = true;
@@ -167,6 +280,15 @@ export function createOrderPanel(): { el: HTMLElement; tick: () => void; setTab:
   }
 
   exec.onclick = () => {
+    if (mode === "reserve") {
+      if (reserveError() !== null) return;
+      const sent = store.conn?.send({
+        t: "reserve", stock: stockId(), action: currentAction(), qty: Math.floor(Number(qty.value)),
+        leverage: tab === "buy" ? leverage : undefined, cond, trigger: Math.floor(Number(trig.value)),
+      });
+      if (!sent) resvInfo.textContent = "서버와 연결 중입니다. 잠시 후 다시 눌러 주세요.";
+      return;
+    }
     const r = simulate();
     if (!r.ok || !store.conn) return;
     if (needsConfirm() && armed === undefined) {
@@ -182,7 +304,8 @@ export function createOrderPanel(): { el: HTMLElement; tick: () => void; setTab:
     update();
   };
 
-  store.on("stock", () => { cancelArm(); });
+  store.on("stock", () => { resetTrigger(); cancelArm(); });
+  store.on("reserves", update);
   store.on("account", update);
   store.on("ref", update);
   update();

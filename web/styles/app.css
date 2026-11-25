@@ -294,3 +294,68 @@ details.key-card > summary { padding: 8px 12px; cursor: pointer; }
   #toasts { top: 48px; right: 8px; left: 8px; align-items: stretch; }
   .toast { max-width: none; min-width: 0; }
 }
+
+/* 보유 탭: 청산 버튼, 청산가 근접 경고 */
+.bt-acts { display: flex; gap: 6px; margin-right: 10px; }
+.bt-acts[hidden], .bt-acts .bt-act[hidden] { display: none; }
+.bt-act { padding: 3px 10px; font-size: 12px; }
+table.grid tbody tr.liq-near { background: color-mix(in srgb, var(--warn, #e0a030) 18%, transparent); }
+
+/* 예약 주문 · 내 성적 · 미션 */
+.op-resv { display: flex; flex-direction: column; gap: 6px; }
+.op-resv[hidden], .op-table[hidden] { display: none; }
+.panel-list { padding: 8px 10px; }
+.panel-list[hidden] { display: none; }
+.resv-row { display: flex; align-items: center; gap: 6px; padding: 5px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.resv-row.done { opacity: 0.65; }
+.resv-row .spacer { flex: 1; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-bottom: 10px; }
+.stat-card { background: var(--panel-2); border-radius: 6px; padding: 8px 10px; }
+.stat-val { font-size: 15px; margin-top: 2px; }
+.quest-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.quest-row.done { opacity: 0.6; }
+.quest-main { flex: 1; min-width: 0; }
+.bar { height: 5px; background: var(--panel-2); border-radius: 3px; margin-top: 4px; overflow: hidden; }
+.bar-fill { height: 100%; background: var(--warn); }
+.badge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+.badge { background: var(--panel-2); border-radius: 6px; padding: 8px 10px; opacity: 0.7; }
+.badge.on { opacity: 1; outline: 1px solid var(--warn); }
+.badge-title { font-weight: 600; }
+.badge-desc { font-size: 12px; margin-bottom: 2px; }
+
+/* 사용법 · 패치노트 */
+.help-wrap { overflow: hidden; }
+.help-view { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.help-view[hidden], .help-pane[hidden], .help-sec[hidden] { display: none; }
+.help-pane { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 16px 28px; max-width: 880px; width: 100%; margin: 0 auto; box-sizing: border-box; }
+.help-head { position: sticky; top: -12px; z-index: 2; background: var(--panel); padding: 12px 0 8px; display: flex; flex-direction: column; gap: 8px; }
+.help-toc { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { background: var(--panel-2); color: var(--text-2); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; }
+.chip:hover { color: var(--text); border-color: var(--accent); }
+.help-sec { padding: 14px 0 6px; border-bottom: 1px solid var(--line); line-height: 1.7; word-break: keep-all; }
+.help-sec h3 { margin: 0 0 8px; font-size: 17px; color: var(--accent); }
+.help-sec p { margin: 0 0 10px; }
+.help-list { margin: 0 0 12px; padding-left: 20px; }
+.help-list li { margin-bottom: 5px; }
+.help-steps li::marker { color: var(--accent); font-weight: 700; }
+.help-box { border-radius: var(--radius); padding: 10px 12px; margin: 0 0 12px; background: var(--panel-2); border-left: 3px solid var(--accent); }
+.help-box-title { font-weight: 700; margin-bottom: 4px; }
+.help-tip { border-left-color: var(--down); }
+.help-warn { border-left-color: var(--up); }
+.help-table { margin: 0 0 12px; width: 100%; }
+.help-table td, .help-table th { white-space: normal; vertical-align: top; }
+.help-table td:first-child { white-space: nowrap; font-weight: 600; }
+.help-tabs { padding: 0 8px; border-bottom: 1px solid var(--line); }
+.patch-card { background: var(--panel-2); border-radius: var(--radius); padding: 12px 14px; margin: 12px 0; }
+.patch-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.patch-title { font-weight: 700; font-size: 16px; }
+.patch-list { list-style: none; padding-left: 0; word-break: keep-all; line-height: 1.6; }
+.patch-tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; margin-right: 8px; border: 1px solid var(--line); }
+.patch-tag.new { color: var(--up); border-color: var(--up); }
+.patch-tag.fix { color: var(--down); border-color: var(--down); }
+.patch-tag.change { color: var(--accent); border-color: var(--accent); }
+.has-dot { position: relative; }
+.has-dot::after, .tab .dot { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--up); }
+.has-dot::after { position: absolute; top: 6px; right: 2px; }
+.tab .dot { margin-left: 6px; vertical-align: middle; }
+.tab .dot[hidden] { display: none; }

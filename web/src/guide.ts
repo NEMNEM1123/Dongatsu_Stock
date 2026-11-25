@@ -1,6 +1,7 @@
 import { RULES } from "../../shared/rules";
 import { el } from "./dom";
 import { won } from "./format";
+import { markPatchSeen } from "./patch";
 
 const KEY = "dg.guide";
 
@@ -40,22 +41,32 @@ const steps = (): Step[] => [
     ],
   },
   {
+    title: "예약 주문으로 편하게",
+    body: [
+      "주문 패널 맨 위에서 '예약'을 고르면, 가격이 내가 정한 값에 닿았을 때 자동으로 사고팔아요. 접속을 끊어 둬도 동작해요.",
+      `산 종목을 팔 때 '손절 -${RULES.RESERVE_STOP_PCT * 100}%'나 '익절 +${RULES.RESERVE_TAKE_PCT * 100}%' 버튼을 누르면 가격이 자동으로 채워져요.`,
+      "손절을 미리 걸어 두면 크게 잃는 것을 막을 수 있어요.",
+    ],
+  },
+  {
     title: "더 즐기기",
     body: [
-      `복권: 1장 ${won(RULES.LOTTERY_PRICE)}원, 하루 ${RULES.LOTTERY_PER_DAY}장까지.`,
+      `복권: 1장 ${won(RULES.LOTTERY_PRICE)}원, 하루 ${RULES.LOTTERY_PER_DAY}장까지. 매일 새 미션을 달성하면 보상금도 받아요.`,
       `순자산이 0이 되면 하루 한 번 파산 구제금 ${won(RULES.BAILOUT_AMOUNT)}원을 받을 수 있어요.`,
       `순자산 ${won(RULES.PRESTIGE_NET_WORTH)}원을 넘으면 프레스티지로 자산을 초기화하고 ★을 얻습니다. 별 하나마다 시작 자금이 ${RULES.PRESTIGE_BONUS_PER_STAR * 100}% 늘어요.`,
+      "더 자세한 설명은 위쪽 '사용법'(휴대폰은 더보기 → 사용법)에서 언제든 볼 수 있어요. 새 소식은 '패치노트'에 올라와요.",
     ],
   },
 ];
 
 export const guideSeen = (): boolean => localStorage.getItem(KEY) === "1";
 
-/** 첫 접속 사용법 안내 (슬라이드 5장, 30초 안팎). 건너뛰거나 끝내면 다시 뜨지 않고, 더보기에서 다시 볼 수 있다. */
+/** 첫 접속 빠른 시작 안내 (슬라이드 6장, 30초 안팎). 건너뛰거나 끝내면 다시 뜨지 않고, 더보기에서 다시 볼 수 있다. */
 export function showGuide(): void {
   const list = steps();
   let i = 0;
   const finish = () => {
+    if (!guideSeen()) markPatchSeen(); // 처음 온 사람에게 지난 패치 알림은 필요 없다 (다시 보기로 연 경우는 건드리지 않는다)
     localStorage.setItem(KEY, "1");
     root.remove();
     document.removeEventListener("keydown", onKey);
@@ -79,7 +90,7 @@ export function showGuide(): void {
 
   function render(): void {
     const s = list[i];
-    root.querySelector(".guide-step")!.textContent = `사용법 ${i + 1} / ${list.length}`;
+    root.querySelector(".guide-step")!.textContent = `빠른 시작 ${i + 1} / ${list.length}`;
     title.textContent = s.title;
     body.replaceChildren(...s.body.map((t) => el("p", {}, t)));
     dots.replaceChildren(...list.map((_, k) => el("span", { class: `guide-dot${k === i ? " on" : ""}` })));

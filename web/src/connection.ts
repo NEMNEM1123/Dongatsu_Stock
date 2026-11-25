@@ -37,8 +37,11 @@ export class Connection {
     this.setStatus("closed");
   }
 
-  send(m: ClientMsg): void {
-    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(m));
+  /** 보냈으면 true. 연결이 열려 있지 않으면 보내지 않고 false (호출한 쪽이 알 수 있게). */
+  send(m: ClientMsg): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN) return false;
+    this.ws.send(JSON.stringify(m));
+    return true;
   }
 
   private setStatus(s: ConnStatus): void {

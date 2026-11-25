@@ -27,6 +27,8 @@ export const RULES = {
   LEVERAGES: [1, 2, 3, 5] as const,
   MAINTENANCE_MARGIN: 0.25, // 내 증거금 대비 남은 순자산이 이 비율 미만이면 강제 청산 (레버리지 2배 이상)
 
+  LIQ_WARN_RATIO: 0.05, // 현재가가 청산가까지 이 비율 이내로 다가오면 경고 (표시 전용, 체결과 무관)
+
   // 공매도
   SHORT_MARGIN: 1.5, // 진입 금액 대비 잠그는 증거금 비율
   SHORT_MAINTENANCE: 1.0, // 공매도 순자산이 (현재가×수량)의 이 비율 미만이면 강제 청산
@@ -53,6 +55,37 @@ export const RULES = {
   // 프레스티지
   PRESTIGE_NET_WORTH: 1_000_000_000,
   PRESTIGE_BONUS_PER_STAR: 0.1,
+
+  // 예약 주문 (지정가 · 손절 · 익절)
+  RESERVE_MAX: 10, // 유저당 동시에 걸어 둘 수 있는 예약 수
+  RESERVE_TTL_MS: 7 * 24 * 3600 * 1000, // 이 기간이 지나면 자동 취소
+  RESERVE_KEEP: 30, // 체결·실패·취소된 예약을 유저당 보관하는 개수
+  RESERVE_STOP_PCT: 0.05, // 손절 빠른 입력: 평균가 대비 (표시 전용)
+  RESERVE_TAKE_PCT: 0.1, // 익절 빠른 입력: 평균가 대비 (표시 전용)
+
+  // 일일 미션 · 업적 (진행도는 거래 기록에서 계산하고, 미션 보상 수령 여부만 따로 저장한다)
+  MISSION_MIN_NOTIONAL: 100_000, // 이 금액 미만의 거래는 미션에 세지 않는다 (소액 반복으로 보상을 노리는 것을 막음)
+  MISSIONS_PER_DAY: 3,
+  MISSION_POOL: [
+    { id: "trades5", kind: "trades", target: 5, reward: 100_000, title: "5번 거래하기" },
+    { id: "trades10", kind: "trades", target: 10, reward: 200_000, title: "10번 거래하기" },
+    { id: "stocks3", kind: "stocks", target: 3, reward: 100_000, title: "서로 다른 3종목 거래하기" },
+    { id: "profit1", kind: "profits", target: 1, reward: 100_000, title: "수익 내고 정리 1회" },
+    { id: "profit3", kind: "profits", target: 3, reward: 250_000, title: "수익 내고 정리 3회" },
+    { id: "lottery3", kind: "lottery", target: 3, reward: 30_000, title: "복권 3장 사기" },
+    { id: "volume5m", kind: "volume", target: 5_000_000, reward: 150_000, title: "거래대금 500만 원 달성" },
+  ],
+  ACHIEVEMENTS: [
+    { id: "first_trade", kind: "trades", target: 1, title: "첫 거래", desc: "처음으로 주식을 사고팔았다" },
+    { id: "trades100", kind: "trades", target: 100, title: "단골 투자자", desc: "거래 100회" },
+    { id: "profit10", kind: "profits", target: 10, title: "수익 습관", desc: "수익을 내고 정리 10회" },
+    { id: "profit50", kind: "profits", target: 50, title: "승부사", desc: "수익을 내고 정리 50회" },
+    { id: "lev5profit", kind: "lev5profit", target: 1, title: "아슬아슬한 성공", desc: "5배 레버리지로 수익 정리" },
+    { id: "liq1", kind: "liquidations", target: 1, title: "쓰라린 경험", desc: "강제 청산을 당했다" },
+    { id: "realized10m", kind: "realized", target: 10_000_000, title: "천만 원의 벽", desc: "누적 실현손익 1,000만 원" },
+    { id: "lottery_big", kind: "lotteryMax", target: 1_000_000, title: "복권 대박", desc: "복권 한 번 구매로 100만 원 이상 당첨" },
+    { id: "prestige1", kind: "prestiges", target: 1, title: "새로운 시작", desc: "프레스티지 달성" },
+  ],
 
   // 기타
   ORDERS_PER_SEC: 5,

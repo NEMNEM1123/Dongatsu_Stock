@@ -9,6 +9,8 @@ import {
 } from "../shared/trading";
 import { KST_MS } from "../shared/candles";
 import { LOTTERY_TOTAL_WEIGHT, prizeForRoll } from "../shared/lottery";
+import { achievementViews, claimKey, missionViews, summarize, type LotterySummary, type TradeRow } from "../shared/records";
+import { firstTrigger, isClosing, parseReserve, type ReserveCond, type ReserveItem, type ReserveStatus } from "../shared/reserve";
 import { toEffect, validateEvent, type EventInput } from "../shared/events";
 import { CLIENT_VERSION } from "../shared/version";
 import {
@@ -59,6 +61,11 @@ interface LiquidationEvent {
   qty: number;
   price: number;
   returned: number;
+}
+
+interface ReserveDone {
+  userId: number;
+  item: ReserveItem;
 }
 
 type Attachment = { userId: number; nickname: string; role: "user" | "admin"; v?: number };
@@ -137,6 +144,7 @@ export class Market extends DurableObject<Env> {
     const cur = tickAt(Date.now(), epoch, RULES.TICK_MS);
     const paths = new Map<number, { from: number; prices: number[] }>();
     const events: LiquidationEvent[] = [];
+    const reserved: ReserveDone[] = [];
 
     this.ctx.storage.transactionSync(() => {
       for (const stock of STOCKS) {
@@ -189,8 +197,11 @@ export class Market extends DurableObject<Env> {
           }
         }
       }
+      // 예약 주문을 먼저 체결한 뒤 청산을 검사한다 (체결로 새로 생긴 포지션도 그 tick 이후로 검사된다)
+      this.processReserves(paths, reserved);
       this.scanLiquidations(paths, events);
     });
+    this.notifyReserves(reserved);
     this.notifyLiquidations(events);
   }
 
@@ -284,6 +295,14 @@ export class Market extends DurableObject<Env> {
       .toArray();
     this.lastNewsTick = px.tick;
     for (const r of rows) this.broadcast({ t: "news", item: this.newsItem(r) });
+
+    // 접속 중에는 매 tick 예약 주문을 검사한다 (접속하지 않은 동안은 체크포인트에서 지난 구간을 훑는다)
+    if (this.hasPendingReserves()) {
+      const paths = new Map<number, { from: number; prices: number[] }>(STOCKS.map((s, i) => [s.id, { from: px.tick, prices: [px.p[i]] }]));
+      const reserved: ReserveDone[] = [];
+      this.ctx.storage.transactionSync(() => this.processReserves(paths, reserved));
+      this.notifyReserves(reserved);
+    }
   }
 
   private newsItem(r: Record<string, SqlStorageValue>): NewsItem {
@@ -489,6 +508,36 @@ export class Market extends DurableObject<Env> {
         CREATE INDEX events_start ON events (start_tick);
       `);
       v = 7;
+    }
+
+    if (v < 8) {
+      this.sql.exec(`
+        CREATE TABLE reserves (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          stock_id INTEGER NOT NULL,
+          action TEXT NOT NULL,
+          qty INTEGER NOT NULL,
+          leverage INTEGER NOT NULL,
+          cond TEXT NOT NULL,
+          trig INTEGER NOT NULL,
+          created_ts INTEGER NOT NULL,
+          created_tick INTEGER NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          note TEXT NOT NULL DEFAULT '',
+          done_ts INTEGER,
+          fill_price INTEGER
+        );
+        CREATE INDEX reserves_user ON reserves (user_id, id);
+        CREATE INDEX reserves_status ON reserves (status);
+        CREATE TABLE claims (
+          user_id INTEGER NOT NULL,
+          key TEXT NOT NULL,
+          ts INTEGER NOT NULL,
+          PRIMARY KEY (user_id, key)
+        ) WITHOUT ROWID;
+      `);
+      v = 8;
     }
 
     this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)", String(v));
@@ -1173,6 +1222,241 @@ export class Market extends DurableObject<Env> {
     return fail(404, "not_found");
   }
 
+  // ── 예약 주문 ──
+  private reserveItem(r: Record<string, SqlStorageValue>): ReserveItem {
+    return {
+      id: Number(r.id),
+      stock: Number(r.stock_id),
+      action: r.action as OrderAction,
+      qty: Number(r.qty),
+      leverage: Number(r.leverage),
+      cond: r.cond as ReserveCond,
+      trigger: Number(r.trig),
+      status: r.status as ReserveStatus,
+      note: String(r.note),
+      ts: Number(r.created_ts),
+      doneTs: r.done_ts === null ? null : Number(r.done_ts),
+      fillPrice: r.fill_price === null ? null : Number(r.fill_price),
+    };
+  }
+
+  private finishReserve(id: number, userId: number, status: "filled" | "failed" | "canceled", note: string, price: number | null, done: ReserveDone[]): void {
+    this.sql.exec("UPDATE reserves SET status = ?, note = ?, done_ts = ?, fill_price = ? WHERE id = ?", status, note, Date.now(), price, id);
+    done.push({ userId, item: this.reserveItem(this.sql.exec("SELECT * FROM reserves WHERE id = ?", id).one()) });
+  }
+
+  private hasPendingReserves(): boolean {
+    return this.sql.exec("SELECT 1 FROM reserves WHERE status = 'pending' LIMIT 1").toArray().length > 0;
+  }
+
+  /**
+   * 대기 중인 예약 중 조건이 맞은 것을 체결한다. 트랜잭션 안에서 호출한다.
+   * paths: 종목별 가격 구간. 실시간은 현재 tick 하나, 체크포인트는 직전 체크포인트 이후 전체 구간이라서
+   * 접속하지 않은 동안 조건이 맞았어도 그 tick의 가격으로 체결된다. 체결은 tick 순서대로 한다.
+   * 강제 청산 조건이 더 먼저 걸린 포지션의 손절·익절은 체결하지 않는다 (청산이 우선).
+   */
+  private processReserves(paths: Map<number, { from: number; prices: number[] }>, done: ReserveDone[]): void {
+    const rows = this.sql.exec("SELECT * FROM reserves WHERE status = 'pending' ORDER BY id").toArray();
+    if (rows.length === 0) return;
+    const now = Date.now();
+    const hits: { r: Record<string, SqlStorageValue>; tick: number; price: number }[] = [];
+    const posRowOf = (userId: number, stockId: number, action: OrderAction) =>
+      this.sql
+        .exec(
+          "SELECT stock_id, side, qty, cost, margin, leverage, opened_tick FROM positions WHERE user_id = ? AND stock_id = ? AND side = ?",
+          userId, stockId, action === "sell" ? "long" : "short",
+        )
+        .toArray()[0];
+
+    for (const r of rows) {
+      const id = Number(r.id), userId = Number(r.user_id), stockId = Number(r.stock_id);
+      const action = r.action as OrderAction;
+      if (now - Number(r.created_ts) > RULES.RESERVE_TTL_MS) {
+        this.finishReserve(id, userId, "canceled", "기간이 지나 취소되었습니다.", null, done);
+        continue;
+      }
+      if (isClosing(action) && !posRowOf(userId, stockId, action)) {
+        this.finishReserve(id, userId, "failed", "정리할 포지션이 없어 취소되었습니다.", null, done);
+        continue;
+      }
+      const path = paths.get(stockId);
+      if (!path) continue;
+      const h = firstTrigger(r.cond as ReserveCond, Number(r.trig), path.prices, path.from, Number(r.created_tick));
+      if (h) hits.push({ r, ...h });
+    }
+
+    hits.sort((a, b) => a.tick - b.tick || Number(a.r.id) - Number(b.r.id));
+    for (const h of hits) {
+      const id = Number(h.r.id), userId = Number(h.r.user_id), stockId = Number(h.r.stock_id);
+      const action = h.r.action as OrderAction;
+      if (isClosing(action)) {
+        const posRow = posRowOf(userId, stockId, action);
+        if (!posRow) {
+          this.finishReserve(id, userId, "failed", "정리할 포지션이 없어 취소되었습니다.", null, done);
+          continue;
+        }
+        const path = paths.get(stockId)!;
+        const liq = firstLiquidation(this.toPosition(posRow), path.prices, path.from, Number(posRow.opened_tick));
+        if (liq && liq.tick <= h.tick) continue; // 청산이 먼저: 이 예약은 포지션이 사라진 뒤 정리된다
+      }
+      const res = this.applyOrder(userId, stockId, action, Number(h.r.qty), Number(h.r.leverage), h.price, h.tick);
+      if (res.ok) this.finishReserve(id, userId, "filled", "", h.price, done);
+      else this.finishReserve(id, userId, "failed", res.error, null, done);
+    }
+  }
+
+  /** 예약 결과를 해당 유저에게 알리고, 체결은 체결 피드에도 올린다. */
+  private notifyReserves(done: ReserveDone[]): void {
+    const users = new Set<number>();
+    for (const d of done) {
+      users.add(d.userId);
+      const msg = JSON.stringify({ t: "reserveDone", item: d.item } satisfies ServerMsg);
+      for (const w of this.socketsOf(d.userId)) w.send(msg);
+      if (d.item.status === "filled") {
+        const nick = this.sql.exec("SELECT nickname FROM users WHERE id = ?", d.userId).toArray()[0]?.nickname;
+        this.broadcast({
+          t: "fill",
+          item: { ts: Date.now(), nick: String(nick ?? "?"), stock: d.item.stock, action: d.item.action, qty: d.item.qty, price: d.item.fillPrice ?? 0 },
+        });
+      }
+    }
+    for (const id of users) {
+      const msg = JSON.stringify(this.accountMsg(id));
+      for (const w of this.socketsOf(id)) w.send(msg);
+    }
+  }
+
+  private sendReserves(ws: WebSocket, userId: number): void {
+    const items = this.sql
+      .exec("SELECT * FROM reserves WHERE user_id = ? ORDER BY (status = 'pending') DESC, id DESC LIMIT ?", userId, RULES.RESERVE_MAX + RULES.RESERVE_KEEP)
+      .toArray()
+      .map((r) => this.reserveItem(r));
+    ws.send(JSON.stringify({ t: "reserves", items } satisfies ServerMsg));
+  }
+
+  private handleReserve(ws: WebSocket, att: Attachment, msg: Extract<ClientMsg, { t: "reserve" }>): void {
+    const fail = (error: string) => ws.send(JSON.stringify({ t: "reserve", ok: false, error } satisfies ServerMsg));
+    if (this.rateLimited(att.userId)) return fail("너무 빠릅니다. 잠시 후 다시 시도하세요.");
+    const p = parseReserve(msg as unknown as Record<string, unknown>);
+    if (!p.ok) return fail(p.error);
+    const v = p.value;
+    if (!STOCKS.some((s) => s.id === v.stock)) return fail("없는 종목입니다.");
+
+    let out: ServerMsg = { t: "reserve", ok: false, error: "처리하지 못했습니다." };
+    this.ctx.storage.transactionSync(() => {
+      const pending = Number(this.sql.exec("SELECT COUNT(*) AS n FROM reserves WHERE user_id = ? AND status = 'pending'", att.userId).one().n);
+      if (pending >= RULES.RESERVE_MAX) {
+        out = { t: "reserve", ok: false, error: `예약은 최대 ${RULES.RESERVE_MAX}건까지 걸 수 있습니다.` };
+        return;
+      }
+      if (isClosing(v.action)) {
+        const pos = this.sql
+          .exec("SELECT qty FROM positions WHERE user_id = ? AND stock_id = ? AND side = ?", att.userId, v.stock, v.action === "sell" ? "long" : "short")
+          .toArray()[0];
+        if (!pos) {
+          out = { t: "reserve", ok: false, error: v.action === "sell" ? "보유한 수량이 없습니다." : "공매도 포지션이 없습니다." };
+          return;
+        }
+        if (v.qty > Number(pos.qty)) {
+          out = { t: "reserve", ok: false, error: "보유 수량보다 많습니다." };
+          return;
+        }
+      }
+      this.sql.exec(
+        "INSERT INTO reserves (user_id, stock_id, action, qty, leverage, cond, trig, created_ts, created_tick) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        att.userId, v.stock, v.action, v.qty, v.leverage, v.cond, v.trigger, Date.now(), this.currentTick(),
+      );
+      const id = Number(this.sql.exec("SELECT last_insert_rowid() AS id").one().id);
+      // 끝난 예약은 최근 RESERVE_KEEP건만 남긴다
+      this.sql.exec(
+        `DELETE FROM reserves WHERE user_id = ? AND status != 'pending'
+         AND id NOT IN (SELECT id FROM reserves WHERE user_id = ? AND status != 'pending' ORDER BY id DESC LIMIT ?)`,
+        att.userId, att.userId, RULES.RESERVE_KEEP,
+      );
+      out = { t: "reserve", ok: true, item: this.reserveItem(this.sql.exec("SELECT * FROM reserves WHERE id = ?", id).one()) };
+    });
+    ws.send(JSON.stringify(out));
+  }
+
+  private handleCancelReserve(ws: WebSocket, att: Attachment, msg: Extract<ClientMsg, { t: "cancelReserve" }>): void {
+    const id = Number(msg.id);
+    let ok = false;
+    this.ctx.storage.transactionSync(() => {
+      const r = this.sql.exec("SELECT id FROM reserves WHERE id = ? AND user_id = ? AND status = 'pending'", id, att.userId).toArray()[0];
+      if (!r) return;
+      this.sql.exec("UPDATE reserves SET status = 'canceled', note = '직접 취소했습니다.', done_ts = ? WHERE id = ?", Date.now(), id);
+      ok = true;
+    });
+    ws.send(JSON.stringify({ t: "cancelReserve", ok, id, error: ok ? undefined : "취소할 수 없는 예약입니다." } satisfies ServerMsg));
+    this.sendReserves(ws, att.userId);
+  }
+
+  // ── 성적표 · 미션 · 업적 ──
+  private userTradeRows(userId: number, sinceTs = 0): TradeRow[] {
+    return this.sql
+      .exec(
+        "SELECT stock_id, action, qty, price, fee, pnl, leverage, ts FROM trades WHERE user_id = ? AND ts >= ? ORDER BY id DESC LIMIT 50000",
+        userId, sinceTs,
+      )
+      .toArray()
+      .map((r) => ({
+        stock: Number(r.stock_id), action: String(r.action), qty: Number(r.qty), price: Number(r.price),
+        fee: Number(r.fee), pnl: r.pnl === null ? null : Number(r.pnl), leverage: Number(r.leverage), ts: Number(r.ts),
+      }));
+  }
+
+  private lotterySummary(userId: number, sinceTs = 0): LotterySummary {
+    const r = this.sql
+      .exec(
+        "SELECT COALESCE(SUM(count), 0) AS n, COALESCE(SUM(cost), 0) AS c, COALESCE(SUM(payout), 0) AS p, COALESCE(MAX(payout), 0) AS m FROM lottery_log WHERE user_id = ? AND ts >= ?",
+        userId, sinceTs,
+      )
+      .one();
+    return { tickets: Number(r.n), cost: Number(r.c), payout: Number(r.p), maxPayout: Number(r.m) };
+  }
+
+  private handleStats(ws: WebSocket, att: Attachment): void {
+    if (this.rateLimited(att.userId)) return;
+    const stats = summarize(this.userTradeRows(att.userId), this.lotterySummary(att.userId));
+    ws.send(JSON.stringify({ t: "stats", stats } satisfies ServerMsg));
+  }
+
+  private questsMsg(userId: number): ServerMsg {
+    const day = this.today();
+    const dayStart = day * 86_400_000 - KST_MS;
+    const claimed = new Set(
+      this.sql.exec("SELECT key FROM claims WHERE user_id = ? AND key LIKE ?", userId, `d:${day}:%`).toArray().map((r) => String(r.key)),
+    );
+    const missions = missionViews(day, this.userTradeRows(userId, dayStart), this.lotterySummary(userId, dayStart), claimed);
+    const achievements = achievementViews(this.userTradeRows(userId), this.lotterySummary(userId));
+    return { t: "quests", day, missions, achievements };
+  }
+
+  private handleQuests(ws: WebSocket, att: Attachment): void {
+    if (this.rateLimited(att.userId)) return;
+    ws.send(JSON.stringify(this.questsMsg(att.userId)));
+  }
+
+  private handleClaim(ws: WebSocket, att: Attachment, msg: Extract<ClientMsg, { t: "claim" }>): void {
+    const fail = (error: string) => ws.send(JSON.stringify({ t: "claim", ok: false, error } satisfies ServerMsg));
+    if (this.rateLimited(att.userId)) return fail("너무 빠릅니다. 잠시 후 다시 시도하세요.");
+    const id = String(msg.id);
+    let out: ServerMsg = { t: "claim", ok: false, error: "처리하지 못했습니다." };
+    this.ctx.storage.transactionSync(() => {
+      const q = this.questsMsg(att.userId);
+      const m = q.t === "quests" ? q.missions.find((x) => x.id === id) : undefined;
+      if (!m) { out = { t: "claim", ok: false, error: "오늘의 미션이 아닙니다." }; return; }
+      if (m.claimed) { out = { t: "claim", ok: false, error: "이미 보상을 받았습니다." }; return; }
+      if (m.progress < m.target) { out = { t: "claim", ok: false, error: "아직 달성하지 못했습니다." }; return; }
+      this.sql.exec("INSERT INTO claims (user_id, key, ts) VALUES (?, ?, ?)", att.userId, claimKey(this.today(), id), Date.now());
+      this.setCash(att.userId, this.getCash(att.userId) + m.reward);
+      out = { t: "claim", ok: true, id, amount: m.reward };
+    });
+    ws.send(JSON.stringify(out));
+    ws.send(JSON.stringify(this.questsMsg(att.userId)));
+    ws.send(JSON.stringify(this.accountMsg(att.userId)));
+  }
+
   // ── 복권 · 프레스티지 ──
   /** 즉석 복권: 장수·잔고·일일 한도 검사, 추첨, 정산을 한 트랜잭션에서 서버가 처리한다. */
   private handleLottery(ws: WebSocket, att: Attachment, msg: Extract<ClientMsg, { t: "lottery" }>): void {
@@ -1471,6 +1755,56 @@ export class Market extends DurableObject<Env> {
     return false;
   }
 
+  /**
+   * 주문 한 건을 계산하고 반영한다. 트랜잭션 안에서 호출해야 한다.
+   * 실패하면 아무것도 쓰지 않고 error를 돌려준다. 시장가 주문과 예약 주문이 같이 쓴다.
+   */
+  private applyOrder(
+    userId: number, stockId: number, action: OrderAction, qty: number, leverage: number, price: number, tick: number,
+  ): { ok: true; fill: Omit<Fill, "slipped"> } | { ok: false; error: string } {
+    const cash = this.getCash(userId);
+    const side = action === "buy" || action === "sell" ? "long" : "short";
+    const other = side === "long" ? "short" : "long";
+    const row = (s: string) =>
+      this.sql
+        .exec("SELECT stock_id, side, qty, cost, margin, leverage FROM positions WHERE user_id = ? AND stock_id = ? AND side = ?", userId, stockId, s)
+        .toArray()[0];
+    const posRow = row(side);
+    const pos = posRow ? this.toPosition(posRow) : undefined;
+
+    const opening = action === "buy" || action === "short";
+    if (opening && row(other)) {
+      return { ok: false, error: side === "long" ? "이 종목의 공매도 포지션을 먼저 정리하세요." : "이 종목의 보유 수량을 먼저 매도하세요." };
+    }
+    let r: OrderResult;
+    if (action === "buy") r = buy(cash, pos, stockId, qty, price, leverage);
+    else if (action === "sell") r = sell(cash, pos, qty, price);
+    else if (action === "short") r = short(cash, pos, stockId, qty, price);
+    else r = cover(cash, pos, qty, price);
+    if (!r.ok) return { ok: false, error: r.error };
+
+    this.setCash(userId, r.cash);
+    if (r.position === null) {
+      this.sql.exec("DELETE FROM positions WHERE user_id = ? AND stock_id = ? AND side = ?", userId, stockId, side);
+    } else if (opening) {
+      this.sql.exec(
+        `INSERT INTO positions (user_id, stock_id, side, qty, cost, margin, leverage, opened_tick) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (user_id, stock_id, side) DO UPDATE SET
+           qty = excluded.qty, cost = excluded.cost, margin = excluded.margin, leverage = excluded.leverage, opened_tick = excluded.opened_tick`,
+        userId, stockId, side, r.position.qty, r.position.cost, r.position.margin, r.position.leverage, tick,
+      );
+    } else {
+      this.sql.exec(
+        "UPDATE positions SET qty = ?, cost = ?, margin = ? WHERE user_id = ? AND stock_id = ? AND side = ?",
+        r.position.qty, r.position.cost, r.position.margin, userId, stockId, side,
+      );
+    }
+    this.addVolume(stockId, tick, r.qty);
+    const lev = r.position?.leverage ?? pos?.leverage ?? 1;
+    this.recordTrade(userId, stockId, action, r.qty, price, r.fee, r.pnl, lev);
+    return { ok: true, fill: { stock: stockId, action, qty: r.qty, price, fee: r.fee, pnl: r.pnl } };
+  }
+
   private handleOrder(ws: WebSocket, att: Attachment, msg: Extract<ClientMsg, { t: "order" }>): void {
     const id = Number(msg.id) || 0;
     const reject = (error: string) => ws.send(JSON.stringify({ t: "order", id, ok: false, error } satisfies ServerMsg));
@@ -1486,56 +1820,13 @@ export class Market extends DurableObject<Env> {
     let events: LiquidationEvent[] = [];
     this.ctx.storage.transactionSync(() => {
       events = this.liquidateUser(att.userId);
-      const tick = this.currentTick();
       const price = this.priceNow(stock.id);
-      const cash = this.getCash(att.userId);
-      const side = action === "buy" || action === "sell" ? "long" : "short";
-      const other = side === "long" ? "short" : "long";
-      const row = (s: string) =>
-        this.sql
-          .exec("SELECT stock_id, side, qty, cost, margin, leverage FROM positions WHERE user_id = ? AND stock_id = ? AND side = ?", att.userId, stock.id, s)
-          .toArray()[0];
-      const posRow = row(side);
-      const pos = posRow ? this.toPosition(posRow) : undefined;
-
-      const opening = action === "buy" || action === "short";
-      if (opening && row(other)) {
-        error = side === "long" ? "이 종목의 공매도 포지션을 먼저 정리하세요." : "이 종목의 보유 수량을 먼저 매도하세요.";
-        return;
-      }
-      let r: OrderResult;
-      if (action === "buy") r = buy(cash, pos, stock.id, msg.qty, price, Number(msg.leverage ?? 1));
-      else if (action === "sell") r = sell(cash, pos, msg.qty, price);
-      else if (action === "short") r = short(cash, pos, stock.id, msg.qty, price);
-      else r = cover(cash, pos, msg.qty, price);
+      const r = this.applyOrder(att.userId, stock.id, action, msg.qty, Number(msg.leverage ?? 1), price, this.currentTick());
       if (!r.ok) {
         error = r.error;
         return;
       }
-
-      this.setCash(att.userId, r.cash);
-      if (r.position === null) {
-        this.sql.exec("DELETE FROM positions WHERE user_id = ? AND stock_id = ? AND side = ?", att.userId, stock.id, side);
-      } else if (opening) {
-        this.sql.exec(
-          `INSERT INTO positions (user_id, stock_id, side, qty, cost, margin, leverage, opened_tick) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT (user_id, stock_id, side) DO UPDATE SET
-             qty = excluded.qty, cost = excluded.cost, margin = excluded.margin, leverage = excluded.leverage, opened_tick = excluded.opened_tick`,
-          att.userId, stock.id, side, r.position.qty, r.position.cost, r.position.margin, r.position.leverage, tick,
-        );
-      } else {
-        this.sql.exec(
-          "UPDATE positions SET qty = ?, cost = ?, margin = ? WHERE user_id = ? AND stock_id = ? AND side = ?",
-          r.position.qty, r.position.cost, r.position.margin, att.userId, stock.id, side,
-        );
-      }
-      this.addVolume(stock.id, tick, r.qty);
-      const lev = r.position?.leverage ?? pos?.leverage ?? 1;
-      this.recordTrade(att.userId, stock.id, action, r.qty, price, r.fee, r.pnl, lev);
-      fill = {
-        stock: stock.id, action, qty: r.qty, price, fee: r.fee, pnl: r.pnl,
-        slipped: typeof msg.px === "number" && msg.px !== price,
-      };
+      fill = { ...r.fill, slipped: typeof msg.px === "number" && msg.px !== price };
     });
 
     this.notifyLiquidations(events);
@@ -1668,7 +1959,10 @@ export class Market extends DurableObject<Env> {
     } else {
       const att = ws.deserializeAttachment() as Attachment | null;
       if (!att) return;
-      const blocked = msg.t === "order" || msg.t === "bailout" || msg.t === "lottery" || msg.t === "prestige" ? this.gate(att) : null;
+      const blocked =
+        msg.t === "order" || msg.t === "bailout" || msg.t === "lottery" || msg.t === "prestige" || msg.t === "reserve" || msg.t === "claim"
+          ? this.gate(att)
+          : null;
       if (blocked) {
         const id = msg.t === "order" ? Number(msg.id) || 0 : 0;
         const reply =
@@ -1678,16 +1972,33 @@ export class Market extends DurableObject<Env> {
         ws.send(JSON.stringify(reply));
         return;
       }
-      if (msg.t === "order") this.handleOrder(ws, att, msg);
-      else if (msg.t === "account") {
-        this.notifyLiquidations(this.liquidateInTx(att.userId));
-        ws.send(JSON.stringify(this.accountMsg(att.userId)));
-      } else if (msg.t === "trades") this.sendTrades(ws, att.userId);
-      else if (msg.t === "bailout") this.handleBailout(ws, att);
-      else if (msg.t === "lb") this.handleLb(ws, att, msg);
-      else if (msg.t === "hof") this.handleHof(ws);
-      else if (msg.t === "lottery") this.handleLottery(ws, att, msg);
-      else if (msg.t === "prestige") this.handlePrestige(ws, att);
+      // 처리 중 예외가 나도 클라이언트가 응답을 기다리며 멈추지 않도록, 응답이 필요한 메시지에는 실패 응답을 보낸다.
+      try {
+        if (msg.t === "order") this.handleOrder(ws, att, msg);
+        else if (msg.t === "account") {
+          this.notifyLiquidations(this.liquidateInTx(att.userId));
+          ws.send(JSON.stringify(this.accountMsg(att.userId)));
+        } else if (msg.t === "trades") this.sendTrades(ws, att.userId);
+        else if (msg.t === "bailout") this.handleBailout(ws, att);
+        else if (msg.t === "lb") this.handleLb(ws, att, msg);
+        else if (msg.t === "hof") this.handleHof(ws);
+        else if (msg.t === "lottery") this.handleLottery(ws, att, msg);
+        else if (msg.t === "prestige") this.handlePrestige(ws, att);
+        else if (msg.t === "stats") this.handleStats(ws, att);
+        else if (msg.t === "quests") this.handleQuests(ws, att);
+        else if (msg.t === "claim") this.handleClaim(ws, att, msg);
+        else if (msg.t === "reserves") this.sendReserves(ws, att.userId);
+        else if (msg.t === "reserve") this.handleReserve(ws, att, msg);
+        else if (msg.t === "cancelReserve") this.handleCancelReserve(ws, att, msg);
+      } catch (e) {
+        console.error("message handler failed", msg.t, e);
+        const error = "서버에서 처리하지 못했습니다. 잠시 후 다시 시도하세요.";
+        try {
+          if (msg.t === "order") ws.send(JSON.stringify({ t: "order", id: Number(msg.id) || 0, ok: false, error } satisfies ServerMsg));
+          else if (msg.t === "lottery") ws.send(JSON.stringify({ t: "lottery", ok: false, error } satisfies ServerMsg));
+          else if (msg.t === "bailout" || msg.t === "prestige" || msg.t === "reserve" || msg.t === "claim") ws.send(JSON.stringify({ t: msg.t, ok: false, error } satisfies ServerMsg));
+        } catch { /* 소켓이 이미 닫힘 */ }
+      }
     }
   }
 

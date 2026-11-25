@@ -19,6 +19,8 @@ import { createNewsStrip } from "./news";
 import { hideOverlay, showOverlay } from "./overlay";
 import { createRankView } from "./rank";
 import { guideSeen, showGuide } from "./guide";
+import { createHelpView } from "./help";
+import { patchUnseen } from "./patch";
 import { createStockList } from "./stocklist";
 import { store } from "./store";
 import { toast } from "./toast";
@@ -134,6 +136,8 @@ export function mountApp(root: HTMLElement, user: UserInfo, onLogout: () => void
   const lotteryWrap = el("main", { class: "rank-wrap", hidden: true }, lottery.el);
   const more = createMoreView({ onLogout, openGuide: showGuide });
   const moreWrap = el("main", { class: "rank-wrap more-wrap", hidden: true }, more.el);
+  const help = createHelpView();
+  const helpWrap = el("main", { class: "rank-wrap help-wrap", hidden: true }, help.el);
   const news = createNewsStrip();
 
   // 모바일 자산 탭 상단 요약 (데스크톱에서는 숨김)
@@ -178,7 +182,7 @@ export function mountApp(root: HTMLElement, user: UserInfo, onLogout: () => void
   });
 
   root.classList.add("app-main");
-  root.replaceChildren(banner, topbar.el, infobar.el, news.el, layout, rankWrap, lotteryWrap, moreWrap, backdrop, tabbar);
+  root.replaceChildren(banner, topbar.el, infobar.el, news.el, layout, rankWrap, lotteryWrap, moreWrap, helpWrap, backdrop, tabbar);
   syncBar();
 
   // 거래소 / 순위 / 복권 화면 전환
@@ -189,12 +193,14 @@ export function mountApp(root: HTMLElement, user: UserInfo, onLogout: () => void
     rankWrap.hidden = v !== "rank";
     lotteryWrap.hidden = v !== "lottery";
     moreWrap.hidden = v !== "more";
+    helpWrap.hidden = v !== "help";
     news.el.classList.toggle("off", v !== "trade");
     syncBar();
     if (v === "more") more.show();
     else more.hide();
     if (v === "rank") rank.show();
     else if (v === "trade") reselect(); // 차트가 숨겨진 동안 크기가 0이었으므로 다시 맞춘다
+    else if (v === "help") help.show();
     else lottery.update();
   });
 
@@ -241,6 +247,7 @@ export function mountApp(root: HTMLElement, user: UserInfo, onLogout: () => void
   document.addEventListener("keydown", onKey);
 
   let guideShown = false;
+  let patchToasted = false;
 
   // ── 점검 · 버전 안내 ──
   let serverState = { on: false, message: "", minVersion: 0 };
@@ -258,15 +265,24 @@ export function mountApp(root: HTMLElement, user: UserInfo, onLogout: () => void
   };
 
   // ── 서버 메시지 ──
-  conn.onStatus = (s) => { banner.hidden = s === "open"; };
+  conn.onStatus = (s) => {
+    banner.hidden = s === "open";
+    if (s === "closed") lottery.reset(); // 응답을 기다리던 중 끊기면 버튼이 잠긴 채 남지 않게
+  };
   conn.onMessage = (m) => {
     switch (m.t) {
       case "hello":
         store.online = m.online;
         topbar.setOnline(m.online);
+        lottery.reset();
+        conn.send({ t: "reserves" });
         book.init(m.epoch, m.tickMs, m.viewSeed, m.px, m.days);
         news.set(m.news);
         if (!guideSeen() && !guideShown) { guideShown = true; showGuide(); } // 첫 접속 사용법 안내
+        else if (patchUnseen() && !patchToasted) {
+          patchToasted = true;
+          toast("새 패치노트가 있어요! 위쪽 '사용법' → '패치노트'에서 확인하세요.", "info", 8000);
+        }
         serverState = { on: m.maintenance.on, message: m.maintenance.message, minVersion: m.minVersion };
         applyServerState();
         reselect(); // 재연결 시에도 봉을 다시 받아 상태를 복구한다
@@ -317,6 +333,38 @@ export function mountApp(root: HTMLElement, user: UserInfo, onLogout: () => void
         store.trades = m.trades;
         store.emit("trades");
         break;
+      case "stats":
+        store.stats = m.stats;
+        store.emit("stats");
+        break;
+      case "quests":
+        store.quests = m;
+        store.emit("quests");
+        break;
+      case "claim":
+        if (m.ok) toast(`미션 보상 ${won(m.amount ?? 0)}원을 받았습니다.`, "up");
+        else toast(m.error ?? "보상을 받을 수 없습니다.", "warn");
+        break;
+      case "reserves":
+        store.reserves = m.items;
+        store.emit("reserves");
+        break;
+      case "reserve":
+        if (m.ok) { toast("예약 주문을 등록했습니다.", "up"); conn.send({ t: "reserves" }); }
+        else toast(m.error, "warn");
+        break;
+      case "cancelReserve":
+        toast(m.ok ? "예약을 취소했습니다." : m.error ?? "취소하지 못했습니다.", m.ok ? "info" : "warn");
+        break;
+      case "reserveDone": {
+        const it = m.item;
+        const label = `${nameOf(it.stock)} ${ACTION_LABEL[it.action]} ${won(it.qty)}주`;
+        if (it.status === "filled") toast(`예약 체결: ${label} @ ${won(it.fillPrice ?? 0)}`, it.action === "buy" || it.action === "cover" ? "up" : "down", 6000);
+        else toast(`예약 ${it.status === "failed" ? "실패" : "취소"}: ${label} — ${it.note}`, "warn", 6000);
+        conn.send({ t: "reserves" });
+        conn.send({ t: "trades" });
+        break;
+      }
       case "lottery":
         lottery.onResult(m);
         if (m.ok && m.payout >= RULES.LOTTERY_PRICE * count0(m)) toast(`복권 당첨금 ${won(m.payout)}원`, "up");

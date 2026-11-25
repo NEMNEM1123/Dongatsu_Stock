@@ -1,8 +1,13 @@
 // 화면 전체가 공유하는 상태와 간단한 이벤트.
 
 import { STOCKS } from "../../shared/stocks";
-import type { FeedItem, PositionInfo, TradeRecord, UserInfo } from "../../shared/protocol";
+import type { FeedItem, PositionInfo, ServerMsg, TradeRecord, UserInfo } from "../../shared/protocol";
+import type { MyStats } from "../../shared/records";
+import type { ReserveItem } from "../../shared/reserve";
 import type { Connection } from "./connection";
+import { markPatchSeen } from "./patch";
+
+export type QuestsData = Extract<ServerMsg, { t: "quests" }>;
 
 export interface Account {
   cash: number;
@@ -12,7 +17,10 @@ export interface Account {
   lotteryLeft: number;
 }
 
-type Evt = "account" | "stock" | "feed" | "trades" | "fav" | "market" | "ref" | "view";
+export type View = "trade" | "rank" | "lottery" | "more" | "help";
+export type HelpTab = "guide" | "patch";
+
+type Evt = "account" | "stock" | "feed" | "trades" | "fav" | "market" | "ref" | "view" | "stats" | "quests" | "reserves" | "help";
 type Fn = () => void;
 
 function loadFav(): Set<number> {
@@ -28,11 +36,15 @@ class Store {
   conn: Connection | null = null;
   stock = STOCKS[0].id;
   market: "stock" | "coin" = "stock";
-  view: "trade" | "rank" | "lottery" | "more" = "trade";
+  view: View = "trade";
+  helpTab: HelpTab = "guide";
   account: Account = { cash: 0, positions: [], bailoutLeft: 0, stars: 0, lotteryLeft: 0 };
   feed: FeedItem[] = []; // 최신순
   feedOn = localStorage.getItem("dg.feedOff") !== "1";
   trades: TradeRecord[] = [];
+  stats: MyStats | null = null;
+  quests: QuestsData | null = null;
+  reserves: ReserveItem[] = [];
   favorites = loadFav();
   online = 0;
   autoSelect = false; // 코드가 종목을 자동으로 바꾸는 중 (사용자가 고른 것과 구분)
@@ -56,8 +68,12 @@ class Store {
     this.account = { cash: 0, positions: [], bailoutLeft: 0, stars: 0, lotteryLeft: 0 };
     this.feed = [];
     this.trades = [];
+    this.stats = null;
+    this.quests = null;
+    this.reserves = [];
     this.refPrice = null;
     this.view = "trade";
+    this.helpTab = "guide";
   }
 
   setStock(id: number): void {
@@ -67,10 +83,18 @@ class Store {
     this.emit("stock");
   }
 
-  setView(v: "trade" | "rank" | "lottery" | "more"): void {
+  setView(v: View): void {
     if (v === this.view) return;
     this.view = v;
     this.emit("view");
+  }
+
+  /** 사용법 화면을 열고 탭을 고른다 */
+  openHelp(tab: HelpTab): void {
+    if (tab === "patch") markPatchSeen(); // 패치노트를 열면 읽은 것으로 본다
+    this.helpTab = tab;
+    this.emit("help"); // 탭·읽음 표시를 쓰는 곳이 갱신된다
+    this.setView("help");
   }
 
   setMarket(m: "stock" | "coin"): void {

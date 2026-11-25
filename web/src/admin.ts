@@ -4,6 +4,7 @@ import { CLIENT_VERSION } from "../../shared/version";
 import { adminCall } from "./api";
 import { el } from "./dom";
 import { bigWon, pct, timeText, won } from "./format";
+import { patchUnseen } from "./patch";
 import { book } from "./pricebook";
 import { store } from "./store";
 import { toast } from "./toast";
@@ -52,7 +53,12 @@ export function createMoreView(opts: { onLogout: () => void; openGuide: () => vo
     b.onclick = run;
     return b;
   };
-  // 순위·복권·로그아웃은 데스크톱에서는 상단 바에 있으므로 모바일에서만 보인다
+  // 패치노트는 어느 화면에서든 보인다. 안 읽은 새 패치가 있으면 점을 표시한다.
+  const patchBtn = menuBtn("패치노트", () => store.openHelp("patch"), "");
+  const syncPatchDot = () => patchBtn.classList.toggle("has-dot", patchUnseen());
+  store.on("help", syncPatchDot);
+  syncPatchDot();
+  // 순위·복권·사용법·로그아웃은 데스크톱에서는 상단 바에 있으므로 모바일에서만 보인다
   const menu = card(
     "메뉴",
     el(
@@ -60,7 +66,9 @@ export function createMoreView(opts: { onLogout: () => void; openGuide: () => vo
       { class: "menu-grid" },
       menuBtn("순위", () => store.setView("rank"), "mobile-only"),
       menuBtn("복권", () => store.setView("lottery"), "mobile-only"),
-      menuBtn("사용법 보기", opts.openGuide, ""),
+      menuBtn("사용법", () => store.openHelp("guide"), "mobile-only"),
+      patchBtn,
+      menuBtn("빠른 시작 안내", opts.openGuide, ""),
       menuBtn("로그아웃", opts.onLogout, "mobile-only"),
     ),
   );
