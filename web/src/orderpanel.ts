@@ -122,7 +122,7 @@ export function createOrderPanel(): { el: HTMLElement; tick: () => void; setTab:
     const price = priceNow();
     const cash = store.account.cash;
     if (tab === "buy") return p === 1 ? maxBuyQty(cash, price, leverage, stockId()) : Math.floor(maxBuyQty(cash, price, leverage, stockId()) * p);
-    if (tab === "short") return p === 1 ? maxShortQty(cash, price) : Math.floor(maxShortQty(cash, price) * p);
+    if (tab === "short") return p === 1 ? maxShortQty(cash, price, leverage) : Math.floor(maxShortQty(cash, price, leverage) * p);
     const held = (sellAction() === "sell" ? heldLong() : heldShort())?.qty ?? 0;
     return p === 1 ? held : Math.floor(held * p);
   }
@@ -138,7 +138,7 @@ export function createOrderPanel(): { el: HTMLElement; tick: () => void; setTab:
     const id = stockId();
     const a = currentAction();
     if (a === "buy") return buy(cash, heldLong(), id, q, price, leverage);
-    if (a === "short") return short(cash, heldShort(), id, q, price);
+    if (a === "short") return short(cash, heldShort(), id, q, price, leverage);
     if (a === "sell") return sell(cash, heldLong(), q, price);
     return cover(cash, heldShort(), q, price);
   }
@@ -204,9 +204,9 @@ export function createOrderPanel(): { el: HTMLElement; tick: () => void; setTab:
   }
 
   function setTab(t: Tab): void {
+    if (t !== tab) leverage = 1; // 매수에서 고른 배율이 공매도로 넘어가지 않게 탭을 바꾸면 1배부터
     tab = t;
-    if (t !== "buy") leverage = 1;
-    else if (!leveragesOf(stockId()).includes(leverage)) leverage = leveragesOf(stockId())[0]!;
+    if (t !== "sell" && !leveragesOf(stockId()).includes(leverage)) leverage = leveragesOf(stockId())[0]!;
     resetTrigger();
     cancelArm();
     update();
@@ -223,9 +223,9 @@ export function createOrderPanel(): { el: HTMLElement; tick: () => void; setTab:
     // 상남자 종목은 공매도가 없고, 레버리지는 10~50배 중에서만 고른다
     if (macho && tab === "short") tab = "buy";
     const allowed = leveragesOf(stockId());
-    if (!allowed.includes(leverage) && tab === "buy") leverage = allowed[0]!;
+    if (!allowed.includes(leverage) && tab !== "sell") leverage = allowed[0]!;
     tabBtns.get("short")!.hidden = macho;
-    levWrap.hidden = tab !== "buy";
+    levWrap.hidden = tab === "sell";
     for (const [l, b] of levBtns) { b.hidden = !allowed.includes(l); setClass(b, `seg-btn${l === leverage ? " on" : ""}`); }
     const a = currentAction();
     setText(tabBtns.get("sell")!, sellAction() === "cover" && tab === "sell" ? "환매" : "매도");
@@ -291,7 +291,7 @@ export function createOrderPanel(): { el: HTMLElement; tick: () => void; setTab:
       if (reserveError() !== null) return;
       const sent = store.conn?.send({
         t: "reserve", stock: stockId(), action: currentAction(), qty: Math.floor(Number(qty.value)),
-        leverage: tab === "buy" ? leverage : undefined, cond, trigger: Math.floor(Number(trig.value)),
+        leverage: tab !== "sell" ? leverage : undefined, cond, trigger: Math.floor(Number(trig.value)),
       });
       if (!sent) resvInfo.textContent = "서버와 연결 중입니다. 잠시 후 다시 눌러 주세요.";
       return;
@@ -306,7 +306,7 @@ export function createOrderPanel(): { el: HTMLElement; tick: () => void; setTab:
     if (armed !== undefined) { clearTimeout(armed); armed = undefined; }
     store.conn.send({
       t: "order", id: ++seq, stock: stockId(), action: currentAction(),
-      qty: Math.floor(Number(qty.value)), leverage: tab === "buy" ? leverage : undefined, px: priceNow(),
+      qty: Math.floor(Number(qty.value)), leverage: tab !== "sell" ? leverage : undefined, px: priceNow(),
     });
     update();
   };

@@ -57,12 +57,13 @@ export function parseReserve(raw: Record<string, unknown>): { ok: true; value: R
   const stock = Number(raw.stock);
   const qty = Number(raw.qty);
   const trigger = Number(raw.trigger);
-  const leverage = action === "buy" ? Number(raw.leverage ?? 1) : 1;
+  const opening = action === "buy" || action === "short";
+  const leverage = opening ? Number(raw.leverage ?? 1) : 1;
   if (!Number.isInteger(stock)) return { ok: false, error: "없는 종목입니다." };
   if (!validQty(qty)) return { ok: false, error: "수량이 올바르지 않습니다." };
   if (raw.cond !== "le" && raw.cond !== "ge") return { ok: false, error: "조건이 올바르지 않습니다." };
   if (!Number.isInteger(trigger) || trigger < RULES.PRICE_FLOOR) return { ok: false, error: `조건 가격은 ${RULES.PRICE_FLOOR}원 이상의 정수여야 합니다.` };
-  if (action === "buy" && !leveragesOf(stock).includes(leverage)) return { ok: false, error: "지원하지 않는 레버리지입니다." };
+  if (opening && !leveragesOf(stock).includes(leverage)) return { ok: false, error: "지원하지 않는 레버리지입니다." };
   return { ok: true, value: { stock, action, qty, leverage, cond: raw.cond, trigger } };
 }
 

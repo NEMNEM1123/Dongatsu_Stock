@@ -90,30 +90,54 @@ describe("레버리지", () => {
 });
 
 describe("공매도", () => {
-  it("증거금 150%를 잠그고, 하락하면 이익", () => {
-    const o = ok(short(1_000_000, undefined, S, 10, 1_000));
-    expect(o.position).toMatchObject({ side: "short", qty: 10, cost: 10_000, margin: 15_000, leverage: 1 });
-    expect(o.cash).toBe(1_000_000 - 15_000 - feeOf(10_000));
+  it("1배는 거래 금액만큼 증거금을 잠그고, 하락하면 이익", () => {
+    const o = ok(short(1_000_000, undefined, S, 10, 1_000, 1));
+    expect(o.position).toMatchObject({ side: "short", qty: 10, cost: 10_000, margin: 10_000, leverage: 1 });
+    expect(o.cash).toBe(1_000_000 - 10_000 - feeOf(10_000));
     const c = ok(cover(o.cash, o.position!, 10, 800)); // 20% 하락 → 이익 2,000
     expect(c.pnl).toBe(2_000 - feeOf(8_000));
     expect(c.position).toBeNull();
   });
 
-  it("청산 경계: 진입가의 125% 초과 (진입 100)", () => {
-    const p = ok(short(1e9, undefined, S, 10, 100)).position!;
-    expect(isLiquidatable(p, 125)).toBe(false);
-    expect(isLiquidatable(p, 126)).toBe(true);
-    expect(liquidationPrice(p)).toBe(125);
+  it("5배: 증거금은 5분의 1, 5% 하락하면 증거금 대비 +25%", () => {
+    const o = ok(short(1_000_000, undefined, S, 100, 1_000, 5)); // 금액 10만
+    expect(o.position!.margin).toBe(20_000);
+    const c = ok(cover(o.cash, o.position!, 100, 950));
+    expect(c.pnl).toBe(5_000 - feeOf(95_000));
+  });
+
+  it("청산 경계: 1배는 175 초과, 2배는 137.5 초과, 5배는 115 초과 (진입 100)", () => {
+    for (const [lev, safe, liq] of [[1, 175, 176], [2, 137, 138], [3, 125, 126], [5, 115, 116]] as const) {
+      const p = ok(short(1e9, undefined, S, 300, 100, lev)).position!;
+      expect(isLiquidatable(p, safe)).toBe(false);
+      expect(isLiquidatable(p, liq)).toBe(true);
+      expect(liquidationPrice(p)).toBe(safe);
+    }
+  });
+
+  it("변경 전에 연 공매도(증거금 150%)는 증거금이 그대로라 212.5 초과에서 청산", () => {
+    const old: Position = { stock: S, side: "short", qty: 10, cost: 1_000, margin: 1_500, leverage: 1 };
+    expect(isLiquidatable(old, 212)).toBe(false);
+    expect(isLiquidatable(old, 213)).toBe(true);
+    expect(ok(cover(0, old, 10, 100)).returned).toBe(1_500 - feeOf(1_000));
+  });
+
+  it("다른 배율 추가와 없는 배율은 거부", () => {
+    const a = ok(short(5_000_000, undefined, S, 10, 1_000, 2));
+    expect(short(a.cash, a.position!, S, 10, 1_000, 3).ok).toBe(false);
+    expect(short(a.cash, a.position!, S, 10, 1_000, 2).ok).toBe(true);
+    expect(short(5_000_000, undefined, S, 10, 1_000, 4).ok).toBe(false);
+    expect(short(5_000_000, undefined, S, 10, 1_000, 10).ok).toBe(false);
   });
 
   it("급등으로 증거금을 넘겨 잃어도 잔고는 음수가 안 됨", () => {
-    const p = ok(short(1e9, undefined, S, 10, 100)).position!; // margin 1,500
+    const p = ok(short(1e9, undefined, S, 10, 100, 1)).position!; // margin 1,000
     const r = liquidate(0, p, 400); // 손실 3,000
     expect(r.cash).toBe(0);
   });
 
   it("잔고 부족 시 거부", () => {
-    expect(short(10_000, undefined, S, 10, 1_000).ok).toBe(false); // 증거금 15,000 필요
+    expect(short(10_000, undefined, S, 10, 1_000, 1).ok).toBe(false); // 증거금 10,000 + 수수료
   });
 });
 
@@ -126,9 +150,11 @@ describe("최대 수량", () => {
           if (q > 0) expect(buy(cash, undefined, S, q, price, lev).ok).toBe(true);
           expect(buy(cash, undefined, S, q + 1, price, lev).ok).toBe(false);
         }
-        const sq = maxShortQty(cash, price);
-        if (sq > 0) expect(short(cash, undefined, S, sq, price).ok).toBe(true);
-        expect(short(cash, undefined, S, sq + 1, price).ok).toBe(false);
+        for (const lev of RULES.LEVERAGES) {
+          const sq = maxShortQty(cash, price, lev);
+          if (sq > 0) expect(short(cash, undefined, S, sq, price, lev).ok).toBe(true);
+          expect(short(cash, undefined, S, sq + 1, price, lev).ok).toBe(false);
+        }
       }
     }
   });
@@ -161,7 +187,7 @@ describe("자산 보존", () => {
 
   it("순자산: 롱·숏 평가가 합산되고 음수 포지션은 0으로 계산", () => {
     const l = ok(buy(1e9, undefined, 1, 10, 100, 5)).position!;
-    const s = ok(short(1e9, undefined, 2, 10, 100)).position!;
+    const s = ok(short(1e9, undefined, 2, 10, 100, 1)).position!;
     const price = (id: number) => (id === 1 ? 50 : 100); // 롱 큰 손실(증거금 200 → 평가 음수)
     expect(positionEquity(l, 50)).toBeLessThan(0);
     expect(netWorth(1_000, [l, s], price)).toBe(1_000 + 0 + s.margin);

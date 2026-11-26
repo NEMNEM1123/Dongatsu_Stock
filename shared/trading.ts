@@ -2,7 +2,7 @@
 //
 // 포지션 모델 (모든 금액은 정수 원)
 //   cost   : 진입 금액 합계 (수량 × 체결가의 합)
-//   margin : 내가 낸 돈 (롱: cost / 레버리지, 숏: cost × 150%)
+//   margin : 내가 낸 돈 (롱: cost / 레버리지, 숏: cost / 레버리지. 2026-11-26 이전에 연 숏은 cost × 1.5)
 //   롱 순자산 = margin + (qty×현재가 − cost)      → 부채 = cost − margin
 //   숏 순자산 = margin + (cost − qty×현재가)
 // 손실은 margin까지만이고, 잔고는 음수가 되지 않는다.
@@ -18,7 +18,7 @@ export interface Position {
   qty: number;
   cost: number;
   margin: number;
-  leverage: number; // 숏은 항상 1
+  leverage: number;
 }
 
 export type OrderResult =
@@ -55,9 +55,8 @@ export function positionEquity(p: Position, price: number): number {
 }
 
 export function isLiquidatable(p: Position, price: number): boolean {
-  const eq = positionEquity(p, price);
-  if (p.side === "long") return p.leverage > 1 && eq < RULES.MAINTENANCE_MARGIN * p.margin;
-  return eq < RULES.SHORT_MAINTENANCE * p.qty * price;
+  if (p.side === "long" && p.leverage <= 1) return false;
+  return positionEquity(p, price) < RULES.MAINTENANCE_MARGIN * p.margin;
 }
 
 /**
@@ -79,11 +78,12 @@ export function firstLiquidation(
 
 /** 표시용 청산가. 롱은 이 가격 이하, 숏은 이 가격 이상이면 청산. 청산 대상이 아니면 null. */
 export function liquidationPrice(p: Position): number | null {
+  const room = (1 - RULES.MAINTENANCE_MARGIN) * p.margin; // 청산 전까지 잃을 수 있는 금액
   if (p.side === "long") {
     if (p.leverage <= 1) return null;
-    return Math.ceil((p.cost - (1 - RULES.MAINTENANCE_MARGIN) * p.margin) / p.qty);
+    return Math.ceil((p.cost - room) / p.qty);
   }
-  return Math.floor((p.margin + p.cost) / ((1 + RULES.SHORT_MAINTENANCE) * p.qty));
+  return Math.floor((p.cost + room) / p.qty);
 }
 
 /** 순자산 = 현금 + 포지션 순자산 합 (포지션 순자산은 0 미만으로 내려가지 않음) */
@@ -112,9 +112,8 @@ export function maxBuyQty(cash: number, price: number, leverage: number, stock?:
   return maxQty(cash, price / leverage + price * feeRate(stock, leverage), (q) => Math.ceil((q * price) / leverage) + feeOf(q * price, stock, leverage));
 }
 
-export function maxShortQty(cash: number, price: number): number {
-  return maxQty(cash, price * RULES.SHORT_MARGIN + price * RULES.FEE_RATE, (q) => Math.ceil(q * price * RULES.SHORT_MARGIN) + feeOf(q * price));
-}
+/** 공매도는 매수와 증거금·수수료가 같다. (상남자 종목은 공매도할 수 없다) */
+export const maxShortQty = (cash: number, price: number, leverage: number): number => maxBuyQty(cash, price, leverage);
 
 // ── 주문 ──
 
@@ -129,8 +128,7 @@ function open(
 ): OrderResult {
   if (!validQty(qty)) return err("수량이 올바르지 않습니다.");
   const notional = qty * price;
-  const margin =
-    side === "long" ? Math.ceil(notional / leverage) : Math.ceil(notional * RULES.SHORT_MARGIN);
+  const margin = Math.ceil(notional / leverage);
   const fee = feeOf(notional, stock, leverage);
   if (margin + fee > cash) return err("잔고가 부족합니다.");
   if (pos && pos.leverage !== leverage) return err(`이미 ${pos.leverage}배 포지션이 있습니다. 같은 배율로만 추가할 수 있습니다.`);
@@ -170,10 +168,11 @@ export function buy(cash: number, pos: Position | undefined, stock: number, qty:
 export const sell = (cash: number, pos: Position | undefined, qty: number, price: number): OrderResult =>
   close(cash, pos, qty, price);
 
-export const short = (cash: number, pos: Position | undefined, stock: number, qty: number, price: number): OrderResult =>
-  STOCKS.find((s) => s.id === stock)?.kind === "macho"
-    ? err("상남자 마켓에서는 공매도할 수 없습니다.")
-    : open(cash, pos, stock, "short", qty, price, 1);
+export function short(cash: number, pos: Position | undefined, stock: number, qty: number, price: number, leverage: number): OrderResult {
+  if (isMacho(stock)) return err("상남자 마켓에서는 공매도할 수 없습니다.");
+  if (!leveragesOf(stock).includes(leverage)) return err(`이 종목은 ${leveragesOf(stock).map((l) => `${l}배`).join("·")}만 고를 수 있습니다.`);
+  return open(cash, pos, stock, "short", qty, price, leverage);
+}
 
 export const cover = (cash: number, pos: Position | undefined, qty: number, price: number): OrderResult =>
   close(cash, pos, qty, price);

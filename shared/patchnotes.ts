@@ -14,6 +14,16 @@ export const PATCH_TAG_LABEL: Record<PatchTag, string> = { new: "새 기능", fi
 
 export const PATCH_NOTES: readonly PatchEntry[] = [
   {
+    id: "2026-11-26.5",
+    date: "2026-11-26",
+    title: "v1.7.0 · 공매도 레버리지",
+    items: [
+      { tag: "new", text: "공매도도 1·2·3·5배를 고를 수 있어요. 증거금과 강제 청산 기준은 매수와 같아요. 5배는 가격이 약 15% 오르면 청산돼요." },
+      { tag: "change", text: "1배 공매도의 증거금이 거래 금액의 150%에서 100%로 줄었고, 약 75% 오르면 청산돼요." },
+      { tag: "change", text: "이미 열어 둔 공매도는 맡긴 증거금이 그대로이고 1배로 취급해요. 진입 가격보다 약 112% 넘게 올라야 청산돼요." },
+    ],
+  },
+  {
     id: "2026-11-26.4",
     date: "2026-11-26",
     title: "v1.6.6 · 이벤트 간격 조정",

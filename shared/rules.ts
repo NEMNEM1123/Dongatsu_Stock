@@ -39,13 +39,11 @@ export const RULES = {
   // 레버리지
   LEVERAGES: [1, 2, 3, 5] as const,
   MACHO_LEVERAGES: [10, 20, 30, 50] as const, // 상남자 마켓 전용. 50배는 약 1.5%만 반대로 움직여도 청산된다. 공매도는 불가.
-  MAINTENANCE_MARGIN: 0.25, // 내 증거금 대비 남은 순자산이 이 비율 미만이면 강제 청산 (레버리지 2배 이상)
+  MAINTENANCE_MARGIN: 0.25, // 내 증거금 대비 남은 순자산이 이 비율 미만이면 강제 청산 (2배 이상 매수, 모든 공매도)
 
   LIQ_WARN_RATIO: 0.05, // 현재가가 청산가까지 이 비율 이내로 다가오면 경고 (표시 전용, 체결과 무관)
 
-  // 공매도
-  SHORT_MARGIN: 1.5, // 진입 금액 대비 잠그는 증거금 비율
-  SHORT_MAINTENANCE: 1.0, // 공매도 순자산이 (현재가×수량)의 이 비율 미만이면 강제 청산
+  // 공매도는 매수와 같은 레버리지(LEVERAGES)·증거금·청산 기준(MAINTENANCE_MARGIN)을 쓴다. 다만 1배도 청산이 있다(가격이 오르면 손실에 한도가 없으므로).
 
   // 파산 구제
   BAILOUT_AMOUNT: 1_000_000,

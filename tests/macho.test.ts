@@ -51,7 +51,7 @@ describe("상남자 마켓", () => {
 
   it("공매도는 할 수 없음", () => {
     const s = machos[0]!;
-    expect(short(10_000_000, undefined, s.id, 1, s.basePrice).ok).toBe(false);
+    expect(short(10_000_000, undefined, s.id, 1, s.basePrice, 1).ok).toBe(false);
   });
 
   it("고변동: 같은 시간 동안 코인보다 더 크게 움직임", () => {

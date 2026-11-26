@@ -124,7 +124,7 @@ export function createBottom(): { el: HTMLElement; tick: () => void } {
         onClick: () => store.setStock(p.stock),
         cells: [
           { text: nameOf(p.stock) },
-          { text: p.side === "long" ? `롱${p.leverage > 1 ? ` ${p.leverage}x` : ""}` : "숏", cls: p.side === "long" ? "up" : "down" },
+          { text: `${p.side === "long" ? "롱" : "숏"}${p.leverage > 1 ? ` ${p.leverage}x` : ""}`, cls: p.side === "long" ? "up" : "down" },
           { text: won(p.qty), cls: "num" },
           { text: won(p.cost / p.qty), cls: "num" },
           { text: won(price), cls: "num" },

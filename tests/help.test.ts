@@ -42,9 +42,10 @@ describe("사용법 본문", () => {
     expect(all).toContain(`${RULES.RESERVE_MAX}건`);
   });
 
-  it("레버리지 청산 폭 계산: 5배는 15%, 공매도는 25%", () => {
+  it("레버리지 청산 폭 계산: 5배는 15%, 공매도는 1배 75%·5배 15% 상승", () => {
     expect(all).toContain("약 15% 하락");
-    expect(all).toContain("약 25% 상승");
+    expect(all).toContain("약 75% 상승");
+    expect(all).toContain("약 15% 상승");
   });
 
   it("초보자용 핵심 항목이 모두 있다", () => {

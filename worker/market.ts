@@ -2180,7 +2180,7 @@ export class Market extends DurableObject<Env> {
     let r: OrderResult;
     if (action === "buy") r = buy(cash, pos, stockId, qty, price, leverage);
     else if (action === "sell") r = sell(cash, pos, qty, price);
-    else if (action === "short") r = short(cash, pos, stockId, qty, price);
+    else if (action === "short") r = short(cash, pos, stockId, qty, price, leverage);
     else r = cover(cash, pos, qty, price);
     if (!r.ok) return { ok: false, error: r.error };
 

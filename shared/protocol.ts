@@ -135,7 +135,7 @@ export type ClientMsg =
       stock: number;
       action: OrderAction;
       qty: number;
-      leverage?: number; // 매수일 때만
+      leverage?: number; // 매수·공매도일 때만
       px?: number; // 화면에 보이던 가격 (참고용. 체결은 항상 서버 가격)
     }
   | { t: "account" }
