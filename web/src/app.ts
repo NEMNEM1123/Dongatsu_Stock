@@ -8,6 +8,7 @@ import { createBottom } from "./bottom";
 import { PriceChart } from "./chart";
 import { Connection } from "./connection";
 import { el } from "./dom";
+import { nextReload } from "./reload";
 import { won } from "./format";
 import { createInfobar, createTopbar } from "./header";
 import { createOrderbook } from "./orderbook";
@@ -284,19 +285,26 @@ export function mountApp(root: HTMLElement, user: UserInfo, onLogout: () => void
     if (s === "closed") { puzzle.reset(); job.reset(); }
     if (s === "closed") lottery.reset(); // 응답을 기다리던 중 끊기면 버튼이 잠긴 채 남지 않게
   };
+  let reloadTimer: number | undefined;
+  function scheduleReload(version: string): void {
+    if (reloadTimer !== undefined) return; // 이미 예약됨
+    let delay: number | null = null;
+    try {
+      const next = nextReload(sessionStorage.getItem("reloadedFor"), version);
+      if (next) {
+        sessionStorage.setItem("reloadedFor", next.record);
+        delay = next.delayMs;
+      }
+    } catch { delay = null; /* 저장소를 못 쓰면 반복을 막을 수 없으므로 시도하지 않는다 */ }
+    if (delay !== null) reloadTimer = window.setTimeout(() => location.reload(), delay);
+  }
+
   conn.onMessage = (m) => {
     switch (m.t) {
       case "hello":
-        // 새 버전이 배포되어 재접속한 경우: 화면도 새 버전으로 바꾼다. 같은 버전으로는 한 번만 시도해서 새로고침이 반복되지 않게 한다.
-        // 서버가 버전을 보내지 않는 옛 서버이거나 저장소를 쓸 수 없으면 새로고침하지 않는다.
-        if (typeof m.appVersion === "string" && m.appVersion !== APP_VERSION) {
-          let tried = true;
-          try {
-            tried = sessionStorage.getItem("reloadedFor") === m.appVersion;
-            if (!tried) sessionStorage.setItem("reloadedFor", m.appVersion);
-          } catch { tried = true; /* 저장소를 못 쓰면 반복을 막을 수 없으므로 시도하지 않는다 */ }
-          if (!tried) { location.reload(); return; }
-        }
+        // 새 버전이 배포되어 재접속한 경우: 화면도 새 버전으로 바꾼다.
+        // 서버가 버전을 보내지 않는 옛 서버면 새로고침하지 않는다.
+        if (typeof m.appVersion === "string" && m.appVersion !== APP_VERSION) scheduleReload(m.appVersion);
         store.online = m.online;
         topbar.setOnline(m.online);
         lottery.reset();

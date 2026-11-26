@@ -14,6 +14,12 @@ export const PATCH_TAG_LABEL: Record<PatchTag, string> = { new: "새 기능", fi
 
 export const PATCH_NOTES: readonly PatchEntry[] = [
   {
+    id: "2026-11-26.2",
+    date: "2026-11-26",
+    title: "v1.6.4 · 자동 새로고침 보완",
+    items: [{ tag: "fix", text: "새 버전이 나왔을 때 화면이 자동으로 바뀌지 않으면 몇 초 뒤에 다시 시도해요." }],
+  },
+  {
     id: "2026-11-26",
     date: "2026-11-26",
     title: "v1.6.3 · 이벤트 빈도 증가",
