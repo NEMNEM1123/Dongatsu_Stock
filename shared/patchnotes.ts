@@ -14,6 +14,12 @@ export const PATCH_TAG_LABEL: Record<PatchTag, string> = { new: "새 기능", fi
 
 export const PATCH_NOTES: readonly PatchEntry[] = [
   {
+    id: "2026-11-26.3",
+    date: "2026-11-26",
+    title: "v1.6.5 · 불필요한 새로고침 줄이기",
+    items: [{ tag: "fix", text: "업데이트 직후에 화면이 필요 없이 여러 번 새로고침될 수 있던 부분을 고쳤어요." }],
+  },
+  {
     id: "2026-11-26.2",
     date: "2026-11-26",
     title: "v1.6.4 · 자동 새로고침 보완",

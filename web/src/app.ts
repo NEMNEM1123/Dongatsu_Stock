@@ -8,7 +8,7 @@ import { createBottom } from "./bottom";
 import { PriceChart } from "./chart";
 import { Connection } from "./connection";
 import { el } from "./dom";
-import { nextReload } from "./reload";
+import { isNewer, nextReload } from "./reload";
 import { won } from "./format";
 import { createInfobar, createTopbar } from "./header";
 import { createOrderbook } from "./orderbook";
@@ -304,7 +304,7 @@ export function mountApp(root: HTMLElement, user: UserInfo, onLogout: () => void
       case "hello":
         // 새 버전이 배포되어 재접속한 경우: 화면도 새 버전으로 바꾼다.
         // 서버가 버전을 보내지 않는 옛 서버면 새로고침하지 않는다.
-        if (typeof m.appVersion === "string" && m.appVersion !== APP_VERSION) scheduleReload(m.appVersion);
+        if (typeof m.appVersion === "string" && isNewer(m.appVersion, APP_VERSION)) scheduleReload(m.appVersion);
         store.online = m.online;
         topbar.setOnline(m.online);
         lottery.reset();

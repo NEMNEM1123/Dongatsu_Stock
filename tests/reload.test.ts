@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { nextReload, RELOAD_DELAYS_MS } from "../web/src/reload";
+import { isNewer, nextReload, RELOAD_DELAYS_MS } from "../web/src/reload";
 
 describe("자동 새로고침", () => {
+  it("서버 버전이 더 높을 때만 새 버전으로 본다", () => {
+    expect(isNewer("1.6.5", "1.6.4")).toBe(true);
+    expect(isNewer("1.10.0", "1.9.9")).toBe(true);
+    expect(isNewer("2.0.0", "1.99.99")).toBe(true);
+    expect(isNewer("1.6.4", "1.6.4")).toBe(false);
+    expect(isNewer("1.6.3", "1.6.4")).toBe(false);
+    expect(isNewer("1.9.9", "1.10.0")).toBe(false);
+  });
+
   it("같은 버전은 정해진 횟수까지만 시도한다", () => {
     let record: string | null = null;
     const delays: number[] = [];
