@@ -71,8 +71,19 @@ const HEADLINES = {
   },
 } as const;
 
-/** tick마다 이벤트를 만들 확률. 평균 AUTO_EVENT_MEAN_SEC마다 한 건 */
-export const autoEventChance = (tickMs: number = RULES.TICK_MS): number => tickMs / (RULES.AUTO_EVENT_MEAN_SEC * 1000);
+/**
+ * 이번 tick에 이벤트를 만들지와 다음 예정 tick을 정한다. 간격은 MIN~MAX_GAP_SEC에서 고르게 무작위라서 최대 간격을 넘기지 않는다.
+ * saved는 저장해 둔 예정 tick(없으면 null). 예정이 없거나, 오래 지났거나, 최대 간격보다 먼 미래면(tick 기준이 바뀐 경우)
+ * 만들지 않고 새로 정한다. 접속하자마자 이벤트가 나오는 것을 노릴 수 없게 하기 위해서다.
+ */
+export function planAutoEvent(saved: number | null, curTick: number, rnd: () => number, tickMs: number = RULES.TICK_MS): { due: boolean; next: number } {
+  const ticks = (sec: number): number => Math.round((sec * 1000) / tickMs);
+  const min = ticks(RULES.AUTO_EVENT_MIN_GAP_SEC);
+  const max = ticks(RULES.AUTO_EVENT_MAX_GAP_SEC);
+  const next = curTick + min + Math.floor(rnd() * (max - min + 1));
+  if (saved === null || curTick - saved > ticks(RULES.AUTO_EVENT_IDLE_GRACE_SEC) || saved - curTick > max) return { due: false, next };
+  return curTick >= saved ? { due: true, next } : { due: false, next: saved };
+}
 
 /**
  * 무작위 이벤트 한 건을 만든다. rnd는 [0,1) 난수 함수(서버는 암호학적 난수를 넣는다).

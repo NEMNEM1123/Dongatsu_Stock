@@ -19,7 +19,7 @@ import {
 import { cashOut, checkBet, isExpired, lose, newRun, nextStage, puzzleOf, remainMs, submit as submitPuzzle, type Outcome, type Run } from "../shared/puzzlerun";
 import { achievementViews, claimKey, missionViews, summarize, type LotterySummary, type TradeRow } from "../shared/records";
 import { firstTrigger, isClosing, parseReserve, type ReserveCond, type ReserveItem, type ReserveStatus } from "../shared/reserve";
-import { autoEventChance, makeAutoEvent, toEffect, validateEvent } from "../shared/events";
+import { makeAutoEvent, planAutoEvent, toEffect, validateEvent } from "../shared/events";
 import { APP_VERSION, CLIENT_VERSION, MIN_CLIENT_VERSION } from "../shared/version";
 import {
   gainValues, liveValues, METRICS, peakUpdate, PERIODS, rankBy, startCapital, weekIdOf, weekLabel,
@@ -363,12 +363,19 @@ export class Market extends DurableObject<Env> {
 
   /**
    * 접속자가 있는 동안(tick이 도는 동안) 가끔 서버가 무작위 이벤트를 만든다.
+   * 다음 예정 tick은 저장해 두어서 서버가 재시작되어도 최대 간격이 유지된다. (예정은 서버만 안다)
    * 시작 tick은 항상 현재보다 미래라서 과거 가격은 바뀌지 않고, 뉴스는 시작 tick에 나간다.
    * 같은 종목에 이벤트가 겹치지 않게 하고, 동시에 진행되는 수에 상한을 둔다. ETF는 구성 종목에서 가격이 나오므로 제외한다.
    */
   private maybeSpawnEvent(curTick: number): void {
     const rnd = (): number => randomBelow(1_000_000) / 1_000_000;
-    if (rnd() >= autoEventChance()) return;
+    const row = this.sql.exec("SELECT value FROM meta WHERE key = 'auto_event_tick'").toArray()[0];
+    const saved = row ? Number(row.value) : null;
+    const plan = planAutoEvent(saved, curTick, rnd);
+    if (!plan.due) {
+      if (plan.next !== saved) this.setMeta("auto_event_tick", String(plan.next));
+      return;
+    }
     const busy = this.sql.exec("SELECT stock_id FROM events WHERE end_tick > ?", curTick).toArray().map((r) => Number(r.stock_id));
     if (busy.length >= RULES.AUTO_EVENT_MAX_ACTIVE) return;
     const pool = STOCKS.filter((s) => s.kind !== "etf" && !busy.includes(s.id));
@@ -383,6 +390,7 @@ export class Market extends DurableObject<Env> {
       input.stock, fx.startTick, fx.endTick, fx.driftPpm, input.totalPct, input.headline, Date.now(), 0,
     );
     this.effectsMemo = null;
+    this.setMeta("auto_event_tick", String(plan.next));
   }
 
   private newsItem(r: Record<string, SqlStorageValue>): NewsItem {

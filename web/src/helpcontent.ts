@@ -393,7 +393,7 @@ export function helpSections(): Section[] {
       id: "news",
       title: "16. 뉴스와 이벤트",
       blocks: [
-        { p: `서버가 접속자가 있는 동안 무작위로 이벤트를 만들어요. 평균 ${RULES.AUTO_EVENT_MEAN_SEC / 60}분에 한 번쯤 나오고, 이벤트가 시작되는 순간부터 해당 종목의 가격이 잠깐 한쪽으로 움직여요.` },
+        { p: `서버가 접속자가 있는 동안 무작위로 이벤트를 만들어요. ${RULES.AUTO_EVENT_MIN_GAP_SEC / 60}~${RULES.AUTO_EVENT_MAX_GAP_SEC / 60}분 간격으로 나오고, 이벤트가 시작되는 순간부터 해당 종목의 가격이 잠깐 한쪽으로 움직여요.` },
         { p: `이벤트 뉴스는 '뉴스 열람권'이 있어야 볼 수 있어요. 화면 위쪽 뉴스 띠의 '뉴스 보기' 버튼을 두 번 누르면 지금 순자산의 ${Math.round(RULES.NEWS_PASS_RATE * 100)}%를 내고 ${RULES.NEWS_PASS_MIN}분 동안 뉴스를 볼 수 있어요. 열람권이 없어도 가격은 똑같이 움직여요.` },
         { ul: [
           "뉴스는 가격이 움직이기 시작할 때 함께 나와요. 미리 알 수는 없어요.",

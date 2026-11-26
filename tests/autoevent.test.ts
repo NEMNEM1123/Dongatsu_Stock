@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { autoEventChance, makeAutoEvent, toEffect, validateEvent } from "../shared/events";
+import { planAutoEvent, makeAutoEvent, toEffect, validateEvent } from "../shared/events";
 import { RULES } from "../shared/rules";
 import { STOCKS } from "../shared/stocks";
 import { mulberry32 } from "../shared/prng";
@@ -60,10 +60,37 @@ describe("자동 이벤트", () => {
     expect(makeAutoEvent(mulberry32(9), tradable[2]!, 50)).toEqual(makeAutoEvent(mulberry32(9), tradable[2]!, 50));
   });
 
-  it("tick당 확률은 평균 간격에서 나옴", () => {
-    expect(autoEventChance()).toBeCloseTo(RULES.TICK_MS / (RULES.AUTO_EVENT_MEAN_SEC * 1000), 10);
-    expect(autoEventChance()).toBeGreaterThan(0);
-    expect(autoEventChance()).toBeLessThan(0.1);
+  const ticks = (sec: number) => (sec * 1000) / RULES.TICK_MS;
+  const min = ticks(RULES.AUTO_EVENT_MIN_GAP_SEC);
+  const max = ticks(RULES.AUTO_EVENT_MAX_GAP_SEC);
+
+  it("접속이 이어지면 이벤트 간격이 항상 최소~최대 범위 안", () => {
+    const rnd = mulberry32(5);
+    let saved: number | null = null;
+    const at: number[] = [];
+    for (let t = 0; t < 100_000; t++) {
+      const plan: { due: boolean; next: number } = planAutoEvent(saved, t, rnd);
+      saved = plan.next;
+      if (plan.due) at.push(t);
+    }
+    const gaps = at.slice(1).map((t, i) => t - at[i]!);
+    expect(gaps.length).toBeGreaterThan(500);
+    expect(Math.min(...gaps)).toBeGreaterThanOrEqual(min);
+    expect(Math.max(...gaps)).toBeLessThanOrEqual(max);
+  });
+
+  it("짧게 끊겼다 돌아오면 지난 예정을 바로 실행", () => {
+    const late = ticks(RULES.AUTO_EVENT_IDLE_GRACE_SEC);
+    expect(planAutoEvent(1000, 1000 + late, mulberry32(6)).due).toBe(true);
+  });
+
+  it("오래 비었거나 tick 기준이 바뀌면 바로 만들지 않고 간격을 새로 정함", () => {
+    for (const [saved, cur] of [[null, 5000], [1000, 1001 + ticks(RULES.AUTO_EVENT_IDLE_GRACE_SEC)], [900_000, 10]] as const) {
+      const plan = planAutoEvent(saved, cur, mulberry32(7));
+      expect(plan.due).toBe(false);
+      expect(plan.next - cur).toBeGreaterThanOrEqual(min);
+      expect(plan.next - cur).toBeLessThanOrEqual(max);
+    }
   });
 
   it("뉴스를 보고 따라 사는 단타가 노릴 수 있는 변동이 크지 않음 (최대 변동률은 평소 하루 변동보다 작다)", () => {
