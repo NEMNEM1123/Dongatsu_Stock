@@ -22,6 +22,8 @@ export const RULES = {
   AUTO_EVENT_MAX_SEC: 120,
   AUTO_EVENT_MAX_ACTIVE: 3, // 동시에 진행·예정인 이벤트 수 상한
   ABNORMAL_RATE: 5, // 수익률이 시작 자금의 이 배수(+500%)를 넘으면 관리자 화면에 표시 (조치는 관리자가 판단)
+  ANNOUNCE_MAX_LEN: 200, // 운영자 전체 공지의 최대 글자 수
+  ADMIN_CASH_MAX: 1_000_000_000_000, // 운영자가 조정할 수 있는 현금 상한(1조 원)
   LB_TOP: 100, // 리더보드에 보여 주는 순위 수
   HOF_TOP: 20, // 명예의 전당에 보관하는 순위 수
 

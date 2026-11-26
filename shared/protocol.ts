@@ -226,6 +226,7 @@ export type ServerMsg =
   | { t: "newsPass"; ok: true; until: number; cost: number; news: NewsItem[] }
   | { t: "newsPass"; ok: false; error: string }
   | { t: "maintenance"; on: boolean; message: string }
+  | { t: "announce"; message: string } // 운영자 전체 공지 (접속 중인 모두에게)
   | { t: "lbTick" } // 순위가 새로 계산됨 → 보고 있다면 다시 요청
   | { t: "feed"; items: FeedItem[] } // 접속 직후: 최근 체결 (최신순)
   | { t: "fill"; item: FeedItem } // 실시간 체결 한 건

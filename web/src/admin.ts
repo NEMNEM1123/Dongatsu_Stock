@@ -1,3 +1,4 @@
+import { RULES } from "../../shared/rules";
 import { STOCKS } from "../../shared/stocks";
 import { APP_VERSION, CLIENT_VERSION } from "../../shared/version";
 import { adminCall } from "./api";
@@ -95,6 +96,16 @@ export function createMoreView(opts: { onLogout: () => void; openGuide: () => vo
   const flagsEl = el("div", { class: "muted admin-flags" });
   const statusCard = card("현황 (10초마다 갱신)", tiles, flagsEl);
 
+  // ── 전체 공지 ──
+  const annText = el("input", { class: "input", placeholder: `접속 중인 모든 유저에게 보낼 문구 (${RULES.ANNOUNCE_MAX_LEN}자까지)`, maxLength: RULES.ANNOUNCE_MAX_LEN });
+  const annSend = confirmButton("공지 보내기", async () => {
+    const r = await adminCall<{ online: number }>("POST", "/api/admin/announce", { message: annText.value });
+    if (!r.ok) return toast(r.message, "warn");
+    annText.value = "";
+    toast(`접속 중인 ${r.data.online}명에게 공지를 보냈습니다.`, "up");
+  }, "btn btn-primary");
+  const announceCard = card("전체 공지", el("div", { class: "muted ev-note" }, "지금 접속해 있는 유저의 화면에만 뜹니다. 나중에 접속한 유저에게는 보이지 않습니다."), row(annText), annSend);
+
   // ── 이벤트·뉴스 (자동 발생: 기록만 본다) ──
   const evTable = el("tbody");
   const eventCard = card(
@@ -167,6 +178,15 @@ export function createMoreView(opts: { onLogout: () => void; openGuide: () => vo
           toast(rr.ok ? (u.banned ? "정지를 풀었습니다." : "정지했습니다.") : rr.message, rr.ok ? "up" : "warn");
           searchUsers();
         });
+        const amount = el("input", { class: "input num", type: "number", step: "1", placeholder: "금액(원)" });
+        const changeCash = async (mode: "set" | "add") => {
+          if (amount.value.trim() === "") return toast("금액을 입력하세요.", "warn");
+          const rr = await adminCall<{ cash: number }>("POST", "/api/admin/cash", { id: u.id, mode, amount: Number(amount.value) });
+          if (!rr.ok) return toast(rr.message, "warn");
+          toast(`${u.nickname}의 현금: ${won(rr.data.cash)}원`, "up");
+          searchUsers();
+        };
+        const cashCell = el("div", { class: "admin-cash" }, amount, confirmButton("지정", () => void changeCash("set")), confirmButton("증감", () => void changeCash("add")));
         const status = [u.role === "admin" ? "관리자" : "", u.banned ? "정지" : "", u.online ? "접속 중" : ""].filter(Boolean).join(" · ") || "–";
         return el(
           "tr",
@@ -175,6 +195,7 @@ export function createMoreView(opts: { onLogout: () => void; openGuide: () => vo
           el("td", {}, u.nickname + (u.stars ? ` ★${u.stars}` : "")),
           el("td", { class: u.banned ? "warn-text" : "muted" }, status),
           el("td", { class: "num" }, u.cash === null ? "–" : bigWon(u.cash)),
+          el("td", {}, cashCell),
           el("td", {}, u.role === "admin" ? "" : rename),
           el("td", {}, u.role === "admin" ? "" : renameBtn),
           el("td", {}, ban),
@@ -186,11 +207,12 @@ export function createMoreView(opts: { onLogout: () => void; openGuide: () => vo
   uq.onkeydown = (e) => { if (e.key === "Enter") searchUsers(); };
   const userCard = card(
     "유저",
+    el("div", { class: "muted ev-note" }, "현금 조정: '지정'은 입력한 금액으로 바꾸고, '증감'은 더합니다(음수면 뺍니다). 바뀐 금액은 순위에도 반영됩니다."),
     row(uq, uSearch),
-    el("table", { class: "grid" }, el("thead", {}, el("tr", {}, ...["ID", "닉네임", "상태", "현금", "새 닉네임", "", ""].map((h) => el("th", {}, h)))), uBody),
+    el("table", { class: "grid" }, el("thead", {}, el("tr", {}, ...["ID", "닉네임", "상태", "현금", "현금 조정", "새 닉네임", "", ""].map((h) => el("th", {}, h)))), uBody),
   );
 
-  if (isAdmin) for (const c of [statusCard, eventCard, maintCard, seasonCard, userCard]) root.appendChild(c);
+  if (isAdmin) for (const c of [statusCard, announceCard, eventCard, maintCard, seasonCard, userCard]) root.appendChild(c);
 
   let loaded = false;
   async function refresh(): Promise<void> {

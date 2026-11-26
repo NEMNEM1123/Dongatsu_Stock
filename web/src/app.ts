@@ -4,6 +4,7 @@ import { getStock } from "../../shared/stocks";
 import { RULES } from "../../shared/rules";
 import { netWorth } from "../../shared/trading";
 import { CLIENT_VERSION } from "../../shared/version";
+import { showAnnounce } from "./announce";
 import { createBottom } from "./bottom";
 import { PriceChart } from "./chart";
 import { Connection } from "./connection";
@@ -316,6 +317,9 @@ export function mountApp(root: HTMLElement, user: UserInfo, onLogout: () => void
           news.resetBuy();
           toast(m.error, "warn");
         }
+        break;
+      case "announce":
+        showAnnounce(m.message);
         break;
       case "maintenance":
         serverState = { ...serverState, on: m.on, message: m.message };

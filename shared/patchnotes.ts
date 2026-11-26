@@ -14,6 +14,12 @@ export const PATCH_TAG_LABEL: Record<PatchTag, string> = { new: "새 기능", fi
 
 export const PATCH_NOTES: readonly PatchEntry[] = [
   {
+    id: "2026-11-26.8",
+    date: "2026-11-26",
+    title: "v1.8.0 · 전체 공지",
+    items: [{ tag: "new", text: "운영자가 보내는 공지가 화면 가운데에 뜰 수 있어요. '확인'을 누르면 닫혀요." }],
+  },
+  {
     id: "2026-11-26.7",
     date: "2026-11-26",
     title: "v1.7.2 · 복권 10배",

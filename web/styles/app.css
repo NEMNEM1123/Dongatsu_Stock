@@ -166,6 +166,12 @@ table.grid tbody tr[class] { cursor: pointer; }
 .overlay-title { font-size: 18px; font-weight: 700; color: var(--accent); }
 .overlay-msg { line-height: 1.6; }
 .login-notice { text-align: center; }
+.announce { position: fixed; inset: 0; z-index: 1800; background: rgba(11, 14, 17, 0.7); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.announce .overlay-box { max-width: 100%; max-height: 100%; overflow-y: auto; }
+.announce-msg { word-break: keep-all; overflow-wrap: anywhere; }
+.admin-cash { display: flex; gap: 4px; align-items: center; }
+.admin-cash .input { width: 120px; }
+.admin-cash .btn { white-space: nowrap; }
 
 /* 더보기 · 관리자 */
 .more-wrap { overflow: auto; }

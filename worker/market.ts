@@ -19,6 +19,7 @@ import {
 import { cashOut, checkBet, isExpired, lose, newRun, nextStage, puzzleOf, remainMs, submit as submitPuzzle, type Outcome, type Run } from "../shared/puzzlerun";
 import { achievementViews, claimKey, missionViews, summarize, type LotterySummary, type TradeRow } from "../shared/records";
 import { firstTrigger, isClosing, parseReserve, type ReserveCond, type ReserveItem, type ReserveStatus } from "../shared/reserve";
+import { adjustCash, parseAnnounce } from "../shared/admin";
 import { makeAutoEvent, planAutoEvent, toEffect, validateEvent } from "../shared/events";
 import { APP_VERSION, CLIENT_VERSION, MIN_CLIENT_VERSION } from "../shared/version";
 import {
@@ -1309,6 +1310,36 @@ export class Market extends DurableObject<Env> {
       if (!Number.isFinite(v) || v < 0 || v > 1_000_000) return fail(400, "버전은 0 이상의 정수여야 합니다.");
       this.setMeta("min_version", String(v));
       return json({ ok: true, minVersion: v });
+    }
+
+    if (req.method === "POST" && p === "/api/admin/announce") {
+      const msg = parseAnnounce(b.message);
+      if (!msg.ok) return fail(400, msg.error);
+      this.broadcast({ t: "announce", message: msg.value });
+      console.log("admin announce", { admin: admin.id, message: msg.value });
+      return json({ ok: true, online: this.onlineCount() });
+    }
+
+    // 현금 조정은 관리자 계정(본인 포함)에도 할 수 있어서, 아래의 유저 관리와 따로 둔다.
+    if (req.method === "POST" && p === "/api/admin/cash") {
+      const id = Number(b.id);
+      if (this.sql.exec("SELECT 1 FROM users WHERE id = ?", id).toArray().length === 0) return fail(404, "없는 유저입니다.");
+      let result: ReturnType<typeof adjustCash> = { ok: false, error: "처리하지 못했습니다." };
+      let events: LiquidationEvent[] = [];
+      let before = 0;
+      this.ctx.storage.transactionSync(() => {
+        events = this.liquidateUser(id); // 밀린 청산을 먼저 반영한 잔고를 기준으로 한다
+        before = this.getCash(id);
+        result = adjustCash(before, b.mode, b.amount);
+        if (result.ok) this.setCash(id, result.value);
+      });
+      this.notifyLiquidations(events);
+      const r = result as ReturnType<typeof adjustCash>;
+      if (!r.ok) return fail(400, r.error);
+      console.log("admin cash", { admin: admin.id, user: id, before, after: r.value });
+      const account = JSON.stringify(this.accountMsg(id));
+      for (const w of this.socketsOf(id)) w.send(account);
+      return json({ ok: true, cash: r.value });
     }
 
     if (req.method === "GET" && p === "/api/admin/users") {
