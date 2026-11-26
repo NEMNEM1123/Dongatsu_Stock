@@ -351,9 +351,10 @@ export function helpSections(): Section[] {
           head: ["미션 후보", "보상"],
           rows: RULES.MISSION_POOL.map((m) => [m.title, `${won(m.reward)}원`]),
         } },
+        { p: `업적은 모두 ${RULES.ACHIEVEMENTS.length}개예요. '미션' 탭에서 분류를 누르면 조건과 진행도가 보여요. 지금까지의 기록도 인정돼요.` },
         { table: {
-          head: ["업적", "조건"],
-          rows: RULES.ACHIEVEMENTS.map((a) => [a.title, a.desc]),
+          head: ["업적 분류", "개수"],
+          rows: RULES.ACHIEVEMENT_CATEGORIES.map((c) => [c.name, `${RULES.ACHIEVEMENTS.filter((a) => a.cat === c.id).length}개`]),
         } },
       ],
     },

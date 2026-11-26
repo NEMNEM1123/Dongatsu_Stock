@@ -17,7 +17,7 @@ import {
   type PtEnd, type PtInfo, type PtRun, type PtStep,
 } from "../shared/ptrun";
 import { cashOut, checkBet, isExpired, lose, newRun, nextStage, puzzleOf, remainMs, submit as submitPuzzle, type Outcome, type Run } from "../shared/puzzlerun";
-import { achievementViews, claimKey, missionViews, summarize, type LotterySummary, type TradeRow } from "../shared/records";
+import { achievementViews, claimKey, missionViews, summarize, type ActivitySummary, type LotterySummary, type TradeRow } from "../shared/records";
 import { firstTrigger, isClosing, parseReserve, type ReserveCond, type ReserveItem, type ReserveStatus } from "../shared/reserve";
 import { adjustCash, parseAnnounce } from "../shared/admin";
 import { makeAutoEvent, planAutoEvent, toEffect, validateEvent } from "../shared/events";
@@ -1591,6 +1591,22 @@ export class Market extends DurableObject<Env> {
     return { tickets: Number(r.n), cost: Number(r.c), payout: Number(r.p), maxPayout: Number(r.m) };
   }
 
+  private activitySummary(userId: number): ActivitySummary {
+    const pz = this.sql
+      .exec("SELECT COUNT(*) AS n, COALESCE(MAX(cleared), 0) AS c, COALESCE(MAX(payout), 0) AS p FROM puzzle_log WHERE user_id = ?", userId)
+      .one();
+    const job = this.sql
+      .exec("SELECT COUNT(*) AS n, COALESCE(SUM(pay), 0) AS p, COUNT(DISTINCT job) AS k FROM pt_log WHERE user_id = ? AND pay > 0", userId)
+      .one();
+    const upg = this.sql.exec("SELECT COALESCE(SUM(level), 0) AS n FROM pt_upgrades WHERE user_id = ?", userId).one();
+    const missions = this.sql.exec("SELECT COUNT(*) AS n FROM claims WHERE user_id = ? AND key LIKE 'd:%'", userId).one();
+    return {
+      puzzlePlays: Number(pz.n), puzzleCleared: Number(pz.c), puzzleMaxPayout: Number(pz.p),
+      jobShifts: Number(job.n), jobPay: Number(job.p), jobKinds: Number(job.k),
+      upgradeLevels: Number(upg.n), missions: Number(missions.n),
+    };
+  }
+
   private handleStats(ws: WebSocket, att: Attachment): void {
     if (this.rateLimited(att.userId)) return;
     const stats = summarize(this.userTradeRows(att.userId), this.lotterySummary(att.userId));
@@ -1604,7 +1620,7 @@ export class Market extends DurableObject<Env> {
       this.sql.exec("SELECT key FROM claims WHERE user_id = ? AND key LIKE ?", userId, `d:${day}:%`).toArray().map((r) => String(r.key)),
     );
     const missions = missionViews(day, this.userTradeRows(userId, dayStart), this.lotterySummary(userId, dayStart), claimed);
-    const achievements = achievementViews(this.userTradeRows(userId), this.lotterySummary(userId));
+    const achievements = achievementViews(this.userTradeRows(userId), this.lotterySummary(userId), this.activitySummary(userId));
     return { t: "quests", day, missions, achievements };
   }
 

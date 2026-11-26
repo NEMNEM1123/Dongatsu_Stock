@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { RULES } from "../shared/rules";
 import {
-  achievementViews, claimKey, dailyMissions, metric, missionViews, summarize,
+  achievementValues, achievementViews, NO_ACTIVITY, claimKey, dailyMissions, metric, missionViews, summarize,
   type LotterySummary, type TradeRow,
 } from "../shared/records";
 
@@ -111,6 +111,51 @@ describe("업적", () => {
     expect(a.find((x) => x.id === "liq1")?.done).toBe(false);
     const b = achievementViews([row({ action: "liquidation", pnl: -1 })], noLottery);
     expect(b.find((x) => x.id === "liq1")?.done).toBe(true);
+  });
+
+  it("업적은 100개이고 제목이 겹치지 않으며, 분류가 모두 정의돼 있다", () => {
+    expect(RULES.ACHIEVEMENTS.length).toBe(100);
+    expect(new Set(RULES.ACHIEVEMENTS.map((a) => a.title)).size).toBe(100);
+    const cats = new Set<string>(RULES.ACHIEVEMENT_CATEGORIES.map((c) => c.id));
+    for (const a of RULES.ACHIEVEMENTS) {
+      expect(cats.has(a.cat)).toBe(true);
+      expect(a.target).toBeGreaterThan(0);
+    }
+    for (const c of cats) expect(RULES.ACHIEVEMENTS.some((a) => a.cat === c)).toBe(true);
+  });
+
+  it("같은 지표의 목표는 겹치지 않고 점점 커진다", () => {
+    const last = new Map<string, number>();
+    for (const a of RULES.ACHIEVEMENTS) {
+      expect(a.target).toBeGreaterThan(last.get(a.kind) ?? 0);
+      last.set(a.kind, a.target);
+    }
+  });
+
+  it("기록이 없으면 하나도 달성되지 않고, 충분하면 모두 달성할 수 있다", () => {
+    expect(achievementViews([], noLottery).filter((a) => a.done)).toEqual([]);
+    for (const kind of new Set(RULES.ACHIEVEMENTS.map((a) => a.kind))) expect(achievementValues([], noLottery, NO_ACTIVITY)[kind]).toBe(0);
+  });
+
+  it("지표 계산: 수익·손실·공매도·상남자를 구분한다", () => {
+    const v = achievementValues(
+      [
+        row({ stock: 1, action: "short", qty: 10, price: 100, fee: 1, leverage: 5 }),
+        row({ stock: 1, action: "cover", qty: 10, price: 90, fee: 1, pnl: 99, leverage: 5 }),
+        row({ stock: 301, action: "sell", qty: 1, price: 500, fee: 2, pnl: 300, leverage: 50 }),
+        row({ stock: 101, action: "sell", qty: 1, price: 500, fee: 2, pnl: -700, leverage: 1 }),
+        row({ stock: 201, action: "liquidation", pnl: -50, leverage: 5 }),
+        row({ stock: 0, action: "lottery", pnl: 1_000_000 }),
+        row({ stock: 0, action: "prestige" }),
+      ],
+      { tickets: 3, cost: 30, payout: 20, maxPayout: 20 },
+      { ...NO_ACTIVITY, jobShifts: 2, missions: 4 },
+    );
+    expect(v).toMatchObject({
+      trades: 4, stocks: 3, profits: 2, grossProfit: 399, bestProfit: 300, realized: -351, losses: 2, worstLoss: 700, liquidations: 1,
+      shorts: 1, shortProfits: 1, shortLev5Profit: 1, lev5profit: 2, lev50profit: 1, machoTrades: 1, machoProfits: 1, coinTrades: 1, coinProfits: 0,
+      etfTrades: 0, lottery: 3, lotteryMax: 20, prestiges: 1, jobShifts: 2, missions: 4,
+    });
   });
 
   it("id가 중복되지 않는다", () => {

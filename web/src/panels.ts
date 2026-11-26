@@ -123,6 +123,8 @@ export function createQuestPanel(): Panel {
   /** 거래대금처럼 큰 숫자는 원 단위로, 나머지는 그대로 */
   const num = (n: number): string => won(n);
 
+  const openCats = new Set<string>();
+
   function render(): void {
     const q = store.quests;
     if (!q) {
@@ -141,20 +143,32 @@ export function createQuestPanel(): Panel {
         btn,
       );
     });
-    const achievements = q.achievements.map((a) =>
+    const badge = (a: (typeof q.achievements)[number]): HTMLElement =>
       el(
         "div",
         { class: `badge${a.done ? " on" : ""}`, title: a.desc },
         el("div", { class: "badge-title" }, `${a.done ? "★ " : ""}${a.title}`),
         el("div", { class: "muted badge-desc" }, a.desc),
-        a.done ? el("span") : bar(a.progress, a.target),
-      ),
-    );
+        ...(a.done ? [] : [el("div", { class: "muted num badge-desc" }, `${num(a.progress)} / ${num(a.target)}`), bar(a.progress, a.target)]),
+      );
+    // 100개라서 분류별로 접어 둔다. 갱신해도 펼쳐 둔 분류는 유지한다.
+    const groups = RULES.ACHIEVEMENT_CATEGORIES.map((c) => {
+      const list = q.achievements.filter((a) => a.cat === c.id);
+      const box = el(
+        "details",
+        { class: "badge-group" },
+        el("summary", {}, `${c.name} ${list.filter((a) => a.done).length} / ${list.length}`),
+        el("div", { class: "badge-grid" }, ...list.map(badge)),
+      );
+      box.open = openCats.has(c.id);
+      box.ontoggle = () => { if (box.open) openCats.add(c.id); else openCats.delete(c.id); };
+      return box;
+    });
     root.replaceChildren(
       el("div", { class: "panel-title" }, `오늘의 미션 (매일 0시 갱신 · 소액 거래는 ${won(RULES.MISSION_MIN_NOTIONAL)}원 이상만 인정)`),
       ...missions,
       el("div", { class: "panel-title" }, `업적 ${q.achievements.filter((a) => a.done).length} / ${q.achievements.length}`),
-      el("div", { class: "badge-grid" }, ...achievements),
+      ...groups,
     );
   }
 

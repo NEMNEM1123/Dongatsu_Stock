@@ -325,6 +325,8 @@ table.grid tbody tr.liq-near { background: color-mix(in srgb, var(--warn, #e0a03
 .quest-main { flex: 1; min-width: 0; }
 .bar { height: 5px; background: var(--panel-2); border-radius: 3px; margin-top: 4px; overflow: hidden; }
 .bar-fill { height: 100%; background: var(--warn); }
+.badge-group > summary { cursor: pointer; padding: 8px 0; border-bottom: 1px solid var(--line); font-weight: 600; }
+.badge-group > .badge-grid { padding: 8px 0; }
 .badge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
 .badge { background: var(--panel-2); border-radius: 6px; padding: 8px 10px; opacity: 0.7; }
 .badge.on { opacity: 1; outline: 1px solid var(--warn); }

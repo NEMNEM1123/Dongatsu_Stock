@@ -2,6 +2,7 @@
 // 진행도는 항상 거래 기록에서 다시 계산하므로 별도 카운터를 저장하지 않는다.
 
 import { RULES } from "./rules";
+import { STOCKS } from "./stocks";
 
 export interface TradeRow {
   stock: number; // 0 = 복권·프레스티지
@@ -112,7 +113,31 @@ export function metric(kind: MetricKind, rows: readonly TradeRow[], lottery: Lot
 }
 
 export interface MissionDef { id: string; kind: MetricKind; target: number; reward: number; title: string }
-export interface AchievementDef { id: string; kind: MetricKind; target: number; title: string; desc: string }
+export type AchievementKind =
+  | "trades" | "volume" | "stocks" | "profits" | "grossProfit" | "realized" | "bestProfit"
+  | "fees" | "losses" | "worstLoss" | "liquidations"
+  | "shorts" | "shortProfits" | "shortLev5Profit" | "lev5profit"
+  | "machoTrades" | "machoProfits" | "lev50profit" | "coinTrades" | "coinProfits" | "etfTrades"
+  | "lottery" | "lotteryMax" | "puzzlePlays" | "puzzleCleared" | "puzzleMaxPayout"
+  | "jobShifts" | "jobPay" | "jobKinds" | "upgradeLevels" | "missions" | "prestiges";
+
+export interface AchievementDef { id: string; cat: string; kind: AchievementKind; target: number; title: string; desc: string }
+
+/** 거래·복권 기록 밖에서 서버가 따로 모아 주는 값 */
+export interface ActivitySummary {
+  puzzlePlays: number;
+  puzzleCleared: number; // 한 판에서 깬 최대 단계
+  puzzleMaxPayout: number;
+  jobShifts: number; // 수입이 있었던 근무 수
+  jobPay: number;
+  jobKinds: number;
+  upgradeLevels: number;
+  missions: number; // 미션 보상을 받은 횟수
+}
+
+export const NO_ACTIVITY: ActivitySummary = {
+  puzzlePlays: 0, puzzleCleared: 0, puzzleMaxPayout: 0, jobShifts: 0, jobPay: 0, jobKinds: 0, upgradeLevels: 0, missions: 0,
+};
 
 export interface MissionView extends MissionDef { progress: number; claimed: boolean }
 export interface AchievementView extends AchievementDef { progress: number; done: boolean }
@@ -151,9 +176,62 @@ export function missionViews(day: number, todayRows: readonly TradeRow[], todayL
   }));
 }
 
-export function achievementViews(rows: readonly TradeRow[], lottery: LotterySummary): AchievementView[] {
+/** 업적에 쓰는 값을 거래 기록을 한 번만 훑어서 모두 계산한다. */
+export function achievementValues(rows: readonly TradeRow[], lottery: LotterySummary, activity: ActivitySummary): Record<AchievementKind, number> {
+  const v: Record<AchievementKind, number> = {
+    ...activity,
+    trades: 0, volume: 0, stocks: 0, profits: 0, grossProfit: 0, realized: 0, bestProfit: 0,
+    fees: 0, losses: 0, worstLoss: 0, liquidations: 0,
+    shorts: 0, shortProfits: 0, shortLev5Profit: 0, lev5profit: 0,
+    machoTrades: 0, machoProfits: 0, lev50profit: 0, coinTrades: 0, coinProfits: 0, etfTrades: 0,
+    lottery: lottery.tickets, lotteryMax: lottery.maxPayout, prestiges: 0,
+  };
+  const kindOf = new Map(STOCKS.map((s) => [s.id, s.kind]));
+  const traded = new Set<number>();
+  for (const r of rows) {
+    if (r.action === "prestige") v.prestiges++;
+    if (r.stock === 0) continue; // 복권·퍼즐·프레스티지는 거래가 아님
+    const kind = kindOf.get(r.stock);
+    const isTrade = TRADE_ACTIONS.has(r.action);
+    const isClose = CLOSE_ACTIONS.has(r.action);
+    v.fees += r.fee;
+    if (isTrade) {
+      v.trades++;
+      v.volume += r.qty * r.price;
+      traded.add(r.stock);
+      if (kind === "macho") v.machoTrades++;
+      else if (kind === "coin") v.coinTrades++;
+      else if (kind === "etf") v.etfTrades++;
+    }
+    if (r.action === "short") v.shorts++;
+    if (r.action === "liquidation") v.liquidations++;
+    if ((!isClose && r.action !== "liquidation") || r.pnl === null) continue;
+    v.realized += r.pnl;
+    if (r.pnl < 0) {
+      v.losses++;
+      v.worstLoss = Math.max(v.worstLoss, -r.pnl);
+    }
+    if (!isClose || r.pnl <= 0) continue; // 아래는 직접 정리해서 낸 수익만
+    v.profits++;
+    v.grossProfit += r.pnl;
+    v.bestProfit = Math.max(v.bestProfit, r.pnl);
+    if (r.leverage >= 5) v.lev5profit++;
+    if (r.leverage >= 50) v.lev50profit++;
+    if (r.action === "cover") {
+      v.shortProfits++;
+      if (r.leverage >= 5) v.shortLev5Profit++;
+    }
+    if (kind === "macho") v.machoProfits++;
+    else if (kind === "coin") v.coinProfits++;
+  }
+  v.stocks = traded.size;
+  return v;
+}
+
+export function achievementViews(rows: readonly TradeRow[], lottery: LotterySummary, activity: ActivitySummary = NO_ACTIVITY): AchievementView[] {
+  const values = achievementValues(rows, lottery, activity);
   return RULES.ACHIEVEMENTS.map((a) => {
-    const value = metric(a.kind, rows, lottery);
-    return { ...a, progress: Math.min(a.target, value), done: value >= a.target };
+    const value = values[a.kind];
+    return { ...a, progress: Math.max(0, Math.min(a.target, value)), done: value >= a.target };
   });
 }

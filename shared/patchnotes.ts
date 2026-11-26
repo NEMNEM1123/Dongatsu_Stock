@@ -14,6 +14,12 @@ export const PATCH_TAG_LABEL: Record<PatchTag, string> = { new: "새 기능", fi
 
 export const PATCH_NOTES: readonly PatchEntry[] = [
   {
+    id: "2026-11-26.9",
+    date: "2026-11-26",
+    title: "v1.9.0 · 업적 100개",
+    items: [{ tag: "new", text: "업적이 100개로 늘었어요. 거래·수익·공매도·복권·퍼즐·알바 등 분류별로 모아 볼 수 있고, 지금까지의 기록도 인정돼요." }],
+  },
+  {
     id: "2026-11-26.8",
     date: "2026-11-26",
     title: "v1.8.0 · 전체 공지",
