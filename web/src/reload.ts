@@ -1,29 +1,68 @@
-// 새 버전 자동 새로고침 판단. 배포 직후에는 새로고침해도 옛 화면 파일이 내려올 수 있어서 간격을 두고 다시 시도한다.
-// 같은 버전으로는 정해진 횟수까지만 시도해서 새로고침이 무한 반복되지 않게 한다.
+// 새 버전 자동 새로고침. 첫 페이지(index.html)를 주기적으로 받아서, 지금 화면이 쓰는 것과 다른 화면 파일이 내려오면 새로고침한다.
+// 서버 재접속에 기대지 않고, 새 파일이 실제로 내려오는 것을 본 뒤에만 새로고침한다.
 
-export const RELOAD_DELAYS_MS: readonly number[] = [0, 5_000, 20_000];
+export const CHECK_INTERVAL_MS = 30_000;
+export const MAX_RELOADS = 3; // 같은 새 파일을 목표로 한 새로고침 횟수 상한 (무한 반복 방지)
+const STORAGE_KEY = "reloadedFor";
 
-/**
- * 서버 버전이 화면 버전보다 높은지. "1.10.0"이 "1.9.0"보다 높도록 자리마다 숫자로 비교한다.
- * 화면이 더 높으면(배포 직후 잠깐 옛 서버에 접속한 경우) 새로고침하지 않는다. 그래서 이전 버전으로 되돌린 배포는 자동 적용되지 않는다.
- */
-export function isNewer(server: string, client: string): boolean {
-  const a = server.split(".").map(Number);
-  const b = client.split(".").map(Number);
-  for (let i = 0; i < Math.max(a.length, b.length); i++) {
-    const diff = (a[i] ?? 0) - (b[i] ?? 0);
-    if (diff !== 0) return diff > 0;
-  }
-  return false;
+/** HTML이나 경로 목록에서 빌드 파일(/assets/ 아래의 js·css)을 뽑아 비교용 문자열로 만든다. 없으면 null. */
+export function assetSignature(text: string): string | null {
+  const found = text.match(/\/assets\/[\w.-]+\.(?:js|css)/g);
+  return found ? [...new Set(found)].sort().join(",") : null;
+}
+
+/** record는 저장해 둔 이전 시도 기록("목표 횟수"). 더 시도해도 되면 새 기록을, 그만해야 하면 null을 돌려준다. */
+export function nextReload(record: string | null, target: string): string | null {
+  const [saved, count] = (record ?? "").split(" ");
+  const done = saved === target ? Number(count) || 0 : 0;
+  return done < MAX_RELOADS ? `${target} ${done + 1}` : null;
+}
+
+export interface WatchDeps {
+  current: string; // 지금 화면의 빌드 파일 목록
+  fetchPage: () => Promise<string | null>; // 첫 페이지 HTML. 실패하면 null
+  storage: () => Pick<Storage, "getItem" | "setItem">;
+  reload: () => void;
 }
 
 /**
- * record는 저장해 둔 이전 시도 기록("버전 횟수"). 더 시도하면 기다릴 시간과 새 기록을, 그만해야 하면 null을 돌려준다.
- * 횟수가 없는 기록은 예전 방식(버전만 저장)이므로 한 번 시도한 것으로 본다.
+ * 한 번 확인하는 함수를 만든다. 배포 중에는 옛 파일과 새 파일이 번갈아 내려올 수 있어서,
+ * 두 번 연속으로 같은 새 파일이 보일 때만 새로고침한다.
  */
-export function nextReload(record: string | null, version: string): { delayMs: number; record: string } | null {
-  const [saved, count] = (record ?? "").split(" ");
-  const done = saved !== version ? 0 : count === undefined ? 1 : Number(count);
-  const delayMs = RELOAD_DELAYS_MS[done];
-  return delayMs === undefined ? null : { delayMs, record: `${version} ${done + 1}` };
+export function createVersionCheck(deps: WatchDeps): () => Promise<void> {
+  let seen: string | null = null;
+  return async () => {
+    const html = await deps.fetchPage().catch(() => null);
+    const latest = html === null ? null : assetSignature(html);
+    if (latest === null) return; // 확인하지 못함: 다음 번에 다시
+    if (latest === deps.current) { seen = null; return; }
+    if (latest !== seen) { seen = latest; return; }
+    try {
+      const store = deps.storage();
+      const record = nextReload(store.getItem(STORAGE_KEY), latest);
+      if (record === null) return;
+      store.setItem(STORAGE_KEY, record);
+    } catch {
+      return; // 저장소를 못 쓰면 반복을 막을 수 없으므로 새로고침하지 않는다
+    }
+    deps.reload();
+  };
+}
+
+/** 브라우저에서 확인을 시작한다. 화면이 다시 보일 때도 바로 확인한다. */
+export function watchForNewVersion(): void {
+  const tags = document.querySelectorAll('script[src^="/assets/"], link[href^="/assets/"]');
+  const current = assetSignature([...tags].map((t) => t.getAttribute("src") ?? t.getAttribute("href") ?? "").join(" "));
+  if (current === null) return;
+  const check = createVersionCheck({
+    current,
+    fetchPage: async () => {
+      const r = await fetch("/", { cache: "no-store" });
+      return r.ok ? r.text() : null;
+    },
+    storage: () => sessionStorage,
+    reload: () => location.reload(),
+  });
+  window.setInterval(() => void check(), CHECK_INTERVAL_MS);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) void check(); });
 }

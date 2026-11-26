@@ -5,6 +5,7 @@ import { api } from "./api";
 import { mountApp } from "./app";
 import { el } from "./dom";
 import { hideOverlay, showOverlay } from "./overlay";
+import { watchForNewVersion } from "./reload";
 import { CLIENT_VERSION } from "../../shared/version";
 import { toast } from "./toast";
 
@@ -61,6 +62,8 @@ function showApp(user: UserInfo): void {
     showLogin();
   });
 }
+
+watchForNewVersion(); // 로그인 전 화면에서도 새 버전이 배포되면 새로고침한다
 
 (async () => {
   // 로그인 전에도 새 버전·점검 상태를 확인한다

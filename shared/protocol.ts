@@ -176,7 +176,7 @@ export type ServerMsg =
       px: { tick: number; p: number[]; ids?: number[] }; // 현재 tick의 종목별 가격. ids는 p의 각 값이 어느 종목인지 (이후 px 메시지도 같은 순서)
       days: DayInit[]; // 종목별 오늘 시가·고가·저가·거래량 (현재 tick까지)
       news: NewsItem[]; // 최근에 시작된 뉴스 (열람권이 없으면 빈 배열)
-      appVersion: string; // 서버의 앱 버전. 화면의 버전과 다르면 새로 배포된 것이므로 화면이 스스로 새로고침한다
+      appVersion: string; // 서버의 앱 버전. v1.7.0까지의 화면이 새 배포를 알아차릴 때 쓴다 (지금 화면은 web/src/reload.ts가 확인한다)
       newsUntil: number; // 뉴스 열람권 만료 시각(ms). 지금보다 이르면 열람권 없음
       maintenance: MaintenanceInfo;
       minVersion: number;
