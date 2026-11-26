@@ -50,19 +50,19 @@ export const RULES = {
   BAILOUT_PER_DAY: 3,
 
   // 복권
-  LOTTERY_PRICE: 10_000,
+  LOTTERY_PRICE: 100_000,
   LOTTERY_PER_DAY: 20,
   // 상금표 (가중치 합 10,000 = 100%). 기대값 약 84%.
   LOTTERY_PRIZES: [
     { payout: 0, weight: 6800 },
-    { payout: 5_000, weight: 2000 },
-    { payout: 10_000, weight: 800 },
-    { payout: 30_000, weight: 270 },
-    { payout: 100_000, weight: 100 },
-    { payout: 1_000_000, weight: 28 },
-    { payout: 10_000_000, weight: 2 },
+    { payout: 50_000, weight: 2000 },
+    { payout: 100_000, weight: 800 },
+    { payout: 300_000, weight: 270 },
+    { payout: 1_000_000, weight: 100 },
+    { payout: 10_000_000, weight: 28 },
+    { payout: 100_000_000, weight: 2 },
   ],
-  LOTTERY_FEED_MIN: 1_000_000, // 이 금액 이상 당첨되면 체결 피드에 알림
+  LOTTERY_FEED_MIN: 10_000_000, // 이 금액 이상 당첨되면 체결 피드에 알림
 
   // 블록 채우기 퍼즐: 조각을 정해진 칸에 빈틈없이 채우면 배당. 단계가 올라갈수록 판이 커지고 시간은 빠듯해진다.
   // 배당은 "현재까지 깬 단계 수"만 따라간다 (배팅액 × PAYOUT_MULT[깬 단계 - 1]). 중간에 멈추면 그 배당을 받고, 시간 초과면 배팅액을 잃는다.

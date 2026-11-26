@@ -14,6 +14,12 @@ export const PATCH_TAG_LABEL: Record<PatchTag, string> = { new: "새 기능", fi
 
 export const PATCH_NOTES: readonly PatchEntry[] = [
   {
+    id: "2026-11-26.7",
+    date: "2026-11-26",
+    title: "v1.7.2 · 복권 10배",
+    items: [{ tag: "change", text: "복권이 1장 100,000원이 됐고 상금도 모두 10배가 됐어요. 1등은 1억 원이에요. 당첨 확률은 그대로예요." }],
+  },
+  {
     id: "2026-11-26.6",
     date: "2026-11-26",
     title: "v1.7.1 · 자동 새로고침 방식 변경",

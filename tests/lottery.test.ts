@@ -24,7 +24,7 @@ describe("복권", () => {
   });
 
   it("일일 한도와 장당 가격이 규칙대로", () => {
-    expect(RULES.LOTTERY_PRICE).toBe(10_000);
+    expect(RULES.LOTTERY_PRICE).toBe(100_000);
     expect(RULES.LOTTERY_PER_DAY).toBe(20);
   });
 });
